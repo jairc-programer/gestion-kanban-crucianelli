@@ -60,10 +60,21 @@ def obtener_siguiente_codigo_k(df):
     # Si no hay huecos intermedios, asigna el siguiente consecutivo
     return f"K{max_num + 1:08d}"
 
-# Inicialización de la App
-st.title("📦 Sistema de Gestión e Impresión de Kanbans")
-
+# Cargar base de datos
 df_kanbans = cargar_datos()
+
+# Extraer lista única de Puestos de Trabajo desde la TablaZ
+puestos_destino_list = sorted(
+    [str(p).strip().upper() for p in df_kanbans['Puesto de trabajo destino'].dropna().unique() if str(p).strip()]
+)
+puestos_origen_list = sorted(
+    [str(p).strip().upper() for p in df_kanbans['Puesto trabajo Origen'].dropna().unique() if str(p).strip()]
+)
+# Unir todos los puestos para las sugerencias
+todos_puestos = sorted(list(set(puestos_destino_list + puestos_origen_list)))
+
+# Inicialización de la App
+st.title("📦 Sistema de Gestión de Kanbans - Crucianelli")
 
 tabs = st.tabs(["➕ Crear Nuevo Kanban", "📋 Lista y Eliminar Kanban", "📊 Exportar a SAP"])
 
@@ -93,23 +104,38 @@ with tabs[0]:
                 "CAPACHO CHICO", "CAPACHO GRANDE", "RACK"
             ])
             
-        puesto_destino = st.text_input("Puesto de Trabajo Destino", max_chars=8).upper().strip()
+        # Desplegable de Puesto de Trabajo Destino (precargado desde TablaZ)
+        opciones_puesto_dest = ["-- Seleccionar / Nuevo --"] + todos_puestos
+        puesto_dest_sel = st.selectbox("Puesto de Trabajo Destino (Predefinido)", opciones_puesto_dest)
+        
+        if puesto_dest_sel == "-- Seleccionar / Nuevo --":
+            puesto_destino = st.text_input("Escriba el Puesto Destino", max_chars=8).upper().strip()
+        else:
+            puesto_destino = puesto_dest_sel
 
     with col2:
         almacen_origen = st.selectbox("Almacén Origen", ["L010", "P110", "P120", "P130", "P140", "P150", "P160", "P170", "P180", "P190"])
         almacen_destino = st.selectbox("Almacén Destino", ["P140", "P160", "P120", "P130", "P150", "P180", "P110", "P190", "L010"])
         
-        puesto_origen = st.text_input("Puesto de Trabajo Origen (Opcional)").upper().strip()
+        # Determinación automática de tipo
+        es_interno = (almacen_origen != "L010")
         
-        # Determinación automática del tipo de Kanban SAP
-        if almacen_origen == "L010":
-            tipo_etiqueta_sap = "KE"  # Externo
-            es_interno = False
-            st.caption("ℹ️ Abastecimiento EXTERNO detectado (Tipo: KE)")
-        else:
+        if es_interno:
             tipo_etiqueta_sap = "KI"  # Interno
-            es_interno = True
-            st.caption("ℹ️ Abastecimiento INTERNO detectado (Tipo: KI)")
+            st.caption("ℹ️ Abastecimiento INTERNO (KI)")
+            # Puesto de Origen ACTIVO
+            opciones_puesto_orig = ["-- Opcional / Seleccionar --"] + todos_puestos
+            puesto_orig_sel = st.selectbox("Puesto de Trabajo Origen", opciones_puesto_orig)
+            if puesto_orig_sel == "-- Opcional / Seleccionar --":
+                puesto_origen = st.text_input("Escriba Puesto Origen", max_chars=8).upper().strip()
+            else:
+                puesto_origen = puesto_orig_sel
+        else:
+            tipo_etiqueta_sap = "KE"  # Externo
+            st.caption("ℹ️ Abastecimiento EXTERNO (KE)")
+            # Puesto de Origen DESACTIVADO para abastecimiento externo
+            puesto_origen = None
+            st.text_input("Puesto de Trabajo Origen", value="- No aplica (Externo L010) -", disabled=True)
 
     with col3:
         cant_repo = st.number_input("Cantidad Reposición (Lote)", min_value=0.0, step=1.0)
@@ -175,8 +201,8 @@ with tabs[1]:
     df_mostrar = df_kanbans.copy()
     if filtro_mat:
         df_mostrar = df_mostrar[
-            df_mostrar['Material'].str.contains(filtro_mat, na=False) | 
-            df_mostrar['N° Etiquetas'].str.contains(filtro_mat, na=False)
+            df_mostrar['Material'].astype(str).str.contains(filtro_mat, na=False) | 
+            df_mostrar['N° Etiquetas'].astype(str).str.contains(filtro_mat, na=False)
         ]
         
     st.dataframe(df_mostrar, use_container_width=True)
