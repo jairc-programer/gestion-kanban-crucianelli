@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import re
 import os
+import json
 from datetime import datetime
 
 st.set_page_config(page_title="Gestor de Kanbans - Crucianelli", layout="wide")
@@ -9,15 +10,33 @@ st.set_page_config(page_title="Gestor de Kanbans - Crucianelli", layout="wide")
 DB_FILE = "TablaZ.xlsx"
 PKG_FILE = "Lote packaging.xlsx"
 LOG_FILE = "historial_cambios.csv"
+USERS_FILE = "usuarios.json"
 SHEET_NAME = "Kanbans CRUCIANELLI"
 
 # ==========================================
-# BASE DE DATOS DE USUARIOS Y CONTRASEÑAS
+# GESTIÓN DE USUARIOS PERSISTENTES (JSON)
 # ==========================================
-USUARIOS_REGISTRADOS = {
-    "jairc@crucianelli.com": "procesojair",
-    "admin@crucianelli.com": "admin123"
-}
+def cargar_usuarios():
+    # Carga predeterminada inicial
+    usuarios_default = {
+        "jairc@crucianelli.com": "procesojair"
+    }
+    if os.path.exists(USERS_FILE):
+        try:
+            with open(USERS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return usuarios_default
+    else:
+        # Si no existe el archivo, lo creamos con el usuario inicial
+        guardar_usuarios(usuarios_default)
+        return usuarios_default
+
+def guardar_usuarios(usuarios_dict):
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(usuarios_dict, f, indent=4)
+
+USUARIOS_REGISTRADOS = cargar_usuarios()
 
 COLUMNS = [
     'N° Etiquetas', 'Tipo Etiqueta', 'Material', 'Centro', 
@@ -61,31 +80,54 @@ OPCIONES_SOPORTE_TARJETA = ["PALLET CHICO", "PALLET GRANDE", "CANASTO", "CAPACHO
 OPCIONES_GAVETA = ["S", "M", "L", "XL"]
 
 # ==========================================
-# GESTIÓN DE SESIÓN Y LOGIN
+# GESTIÓN DE SESIÓN Y LOGIN / REGISTRO
 # ==========================================
 if 'usuario_email' not in st.session_state:
     st.session_state['usuario_email'] = None
 
 if not st.session_state['usuario_email']:
-    st.title("🔐 Acceso al Sistema - Crucianelli")
-    st.subheader("Ingrese sus credenciales corporativas")
+    st.title("📦 Sistema de Gestión de Kanbans - Crucianelli")
     
-    col_login1, col_login2 = st.columns([1, 2])
-    with col_login1:
-        email_input = st.text_input("Correo electrónico (@crucianelli.com):").strip().lower()
-        password_input = st.text_input("Contraseña:", type="password")
+    col_auth, _ = st.columns([1.5, 2])
+    with col_auth:
+        tab_login, tab_register = st.tabs(["🔐 Iniciar Sesión", "📝 Registrarse"])
         
-        if st.button("Iniciar Sesión", type="primary"):
-            if not email_input or not password_input:
-                st.error("❌ Por favor ingrese su correo y contraseña.")
-            elif not email_input.endswith("@crucianelli.com"):
-                st.error("❌ El correo debe pertenecer al dominio @crucianelli.com.")
-            elif email_input in USUARIOS_REGISTRADOS and USUARIOS_REGISTRADOS[email_input] == password_input:
-                st.session_state['usuario_email'] = email_input
-                st.success(f"Bienvenido/a {email_input}")
-                st.rerun()
-            else:
-                st.error("❌ Credenciales incorrectas. Verifique el usuario y la contraseña.")
+        # --- LOGIN ---
+        with tab_login:
+            email_input = st.text_input("Correo electrónico (@crucianelli.com):", key="log_email").strip().lower()
+            password_input = st.text_input("Contraseña:", type="password", key="log_pass")
+            
+            if st.button("Ingresar", type="primary", use_container_width=True):
+                if not email_input or not password_input:
+                    st.error("❌ Complete correo y contraseña.")
+                elif not email_input.endswith("@crucianelli.com"):
+                    st.error("❌ El correo debe ser del dominio @crucianelli.com.")
+                elif email_input in USUARIOS_REGISTRADOS and USUARIOS_REGISTRADOS[email_input] == password_input:
+                    st.session_state['usuario_email'] = email_input
+                    st.success(f"Bienvenido/a {email_input}")
+                    st.rerun()
+                else:
+                    st.error("❌ Credenciales incorrectas o usuario no registrado.")
+
+        # --- REGISTRO LIBRE PARA EMPLEADOS ---
+        with tab_register:
+            reg_email = st.text_input("Correo corporativo (@crucianelli.com):", key="reg_email").strip().lower()
+            reg_pass1 = st.text_input("Cree su contraseña:", type="password", key="reg_pass1")
+            reg_pass2 = st.text_input("Confirme su contraseña:", type="password", key="reg_pass2")
+            
+            if st.button("Crear Cuenta", use_container_width=True):
+                if not reg_email or not reg_pass1 or not reg_pass2:
+                    st.error("❌ Complete todos los campos.")
+                elif not reg_email.endswith("@crucianelli.com"):
+                    st.error("❌ El correo debe ser obligatoriamente @crucianelli.com.")
+                elif reg_pass1 != reg_pass2:
+                    st.error("❌ Las contraseñas no coinciden.")
+                elif reg_email in USUARIOS_REGISTRADOS:
+                    st.warning("⚠️ Este usuario ya se encuentra registrado. Inicie sesión directamente.")
+                else:
+                    USUARIOS_REGISTRADOS[reg_email] = reg_pass1
+                    guardar_usuarios(USUARIOS_REGISTRADOS)
+                    st.success("✅ ¡Cuenta creada exitosamente! Ya puede iniciar sesión.")
     st.stop()
 
 # ==========================================
@@ -171,23 +213,30 @@ internos_k = len(df_kanbans[df_kanbans['Tipo Etiqueta'] == 'KI'])
 externos_k = len(df_kanbans[df_kanbans['Tipo Etiqueta'] == 'KE'])
 proximo_k_val = obtener_siguiente_codigo_k(df_kanbans)
 
-ultima_modif_str = "Sin registros"
+# Formateo limpio para la métrica de Última Modificación (evita cortes de pantalla)
+val_fecha_str = "-"
+val_detalle_str = "Sin registros"
+
 if os.path.exists(LOG_FILE):
     df_logs_temp = pd.read_csv(LOG_FILE)
     if not df_logs_temp.empty:
         ultimo_reg = df_logs_temp.iloc[-1]
-        fecha_h = ultimo_reg['Fecha_Hora']
-        usr = ultimo_reg['Usuario'].split('@')[0]
-        acc = ultimo_reg['Acción']
-        k_code = ultimo_reg['Código_K']
-        ultima_modif_str = f"{fecha_h} | {usr} ({acc} {k_code})"
+        val_fecha_str = str(ultimo_reg['Fecha_Hora'])
+        usr = str(ultimo_reg['Usuario']).split('@')[0]
+        acc = str(ultimo_reg['Acción'])
+        k_code = str(ultimo_reg['Código_K'])
+        val_detalle_str = f"{usr} ({acc} {k_code})"
 
 kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
 kpi1.metric("Total Kanbans", total_k)
 kpi2.metric("Internos (KI)", internos_k)
 kpi3.metric("Externos (KE)", externos_k)
 kpi4.metric("Próximo Código K", proximo_k_val)
-kpi5.metric("Última Modificación", ultima_modif_str)
+
+with kpi5:
+    st.caption("Última Modificación")
+    st.markdown(f"**{val_fecha_str}**")
+    st.caption(val_detalle_str)
 
 st.markdown("---")
 
@@ -364,7 +413,6 @@ with tabs[1]:
                 opciones_k = kanbans_encontrados['N° Etiquetas'].tolist()
                 k_seleccionado = st.selectbox("Seleccione el Código K a modificar:", opciones_k)
                 
-                # Obtener la fila actual del Kanban a editar
                 row = kanbans_encontrados[kanbans_encontrados['N° Etiquetas'] == k_seleccionado].iloc[0]
                 
                 pkg_sugerido_mod = dict_pkg.get(busqueda_material, None)
