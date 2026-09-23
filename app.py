@@ -13,7 +13,6 @@ SHEET_NAME = "Kanbans CRUCIANELLI"
 
 # ==========================================
 # BASE DE DATOS DE USUARIOS Y CONTRASEÑAS
-# (Puedes agregar más usuarios en este diccionario)
 # ==========================================
 USUARIOS_REGISTRADOS = {
     "jairc@crucianelli.com": "procesojair",
@@ -58,6 +57,8 @@ ALMACENES_PUESTOS = {
 }
 
 LISTA_ALMACENES = list(ALMACENES_PUESTOS.keys())
+OPCIONES_SOPORTE_TARJETA = ["PALLET CHICO", "PALLET GRANDE", "CANASTO", "CAPACHO CHICO", "CAPACHO GRANDE", "RACK"]
+OPCIONES_GAVETA = ["S", "M", "L", "XL"]
 
 # ==========================================
 # GESTIÓN DE SESIÓN Y LOGIN
@@ -190,7 +191,7 @@ kpi5.metric("Última Modificación", ultima_modif_str)
 
 st.markdown("---")
 
-tabs = st.tabs(["➕ Crear Nuevo Kanban", "📋 Lista y Eliminar", "📊 Exportar Datos", "📜 Historial Auditoría"])
+tabs = st.tabs(["➕ Crear Nuevo Kanban", "✏️ Modificar y Eliminar", "📊 Exportar Datos", "📜 Historial Auditoría"])
 
 # ==========================================
 # TAB 1: CREAR KANBAN
@@ -210,12 +211,9 @@ with tabs[0]:
         
         tipo_soporte = st.selectbox("Tipo de Kanban", ["GAVETA", "TARJETA"])
         if tipo_soporte == "GAVETA":
-            tamano_medio = st.selectbox("Tamaño Gaveta", ["S", "M", "L", "XL"])
+            tamano_medio = st.selectbox("Tamaño Gaveta", OPCIONES_GAVETA)
         else:
-            tamano_medio = st.selectbox("Tipo Tarjeta/Contenedor", [
-                "PALLET CHICO", "PALLET GRANDE", "CANASTO", 
-                "CAPACHO CHICO", "CAPACHO GRANDE", "RACK"
-            ])
+            tamano_medio = st.selectbox("Tipo Tarjeta/Contenedor", OPCIONES_SOPORTE_TARJETA)
 
     with col2:
         almacen_origen = st.selectbox("Almacén Origen", LISTA_ALMACENES, index=LISTA_ALMACENES.index("L010"))
@@ -255,21 +253,11 @@ with tabs[0]:
         cant_repo = st.number_input("Cantidad Reposición (Lote)", min_value=0.0, value=default_cant, step=1.0)
         
         if pkg_sugerido and cant_repo > 0 and (cant_repo % pkg_sugerido != 0):
-            st.warning(f"⚠️ Atención: Para creaciones nuevas, la cantidad ({int(cant_repo)}) debe ser múltiplo de {pkg_sugerido}.")
+            st.warning(f"⚠️ Atención: La cantidad ({int(cant_repo)}) debe ser múltiplo de {pkg_sugerido}.")
             
         cant_pp = st.number_input("Cantidad Punto de Pedido", min_value=0.0, step=1.0)
         unidad = st.selectbox("Unidad Base", ["UN", "M", "L", "KG"])
         dias_prep = st.number_input("Tiempo Preparación / Días Abast.", min_value=0, value=1)
-
-    proceso_sel = None
-    if es_interno:
-        st.markdown("---")
-        st.subheader("⚙️ Procesos del Abastecimiento Interno")
-        proceso_sel = st.selectbox("Proceso Requerido", [
-            "Sin proceso específico",
-            "Pintura Roja", "Pintura Blanca", "Pintura Negra",
-            "Soldadura", "Balancines", "Armado", "Corte"
-        ])
 
     st.markdown("---")
     if st.button("💾 Guardar y Crear Kanban", type="primary"):
@@ -319,10 +307,10 @@ with tabs[0]:
                 st.rerun()
 
 # ==========================================
-# TAB 2: CONSULTA Y BORRADO
+# TAB 2: CONSULTA, MODIFICACIÓN Y ELIMINACIÓN
 # ==========================================
 with tabs[1]:
-    st.subheader("Registro General de Kanbans")
+    st.subheader("📋 Registro General de Kanbans")
     
     col_f1, col_f2 = st.columns(2)
     with col_f1:
@@ -356,23 +344,141 @@ with tabs[1]:
     )
     
     st.markdown("---")
-    st.subheader("🗑️ Eliminar Kanban")
-    st.warning("Al eliminar un Kanban, su código K quedará liberado y se registrará la baja en el historial.")
     
-    k_a_eliminar = st.selectbox(
-        "Seleccione el Código K a eliminar:", 
-        options=["-- Seleccionar --"] + list(df_kanbans['N° Etiquetas'].unique())
-    )
+    col_mod, col_del = st.columns([2, 1])
     
-    if st.button("🗑️ Eliminar Definitivamente") and k_a_eliminar != "-- Seleccionar --":
-        mat_afectado = df_kanbans[df_kanbans['N° Etiquetas'] == k_a_eliminar]['Material'].values[0]
-        usuario_actual = st.session_state['usuario_email']
+    # ----------------------------------
+    # SECCIÓN DE MODIFICACIÓN
+    # ----------------------------------
+    with col_mod:
+        st.subheader("✏️ Modificar Kanban Existente")
         
-        df_kanbans = df_kanbans[df_kanbans['N° Etiquetas'] != k_a_eliminar]
-        guardar_datos(df_kanbans)
-        registrar_log("ELIMINAR", k_a_eliminar, mat_afectado, usuario_actual)
-        st.success(f"♻️ Kanban **{k_a_eliminar}** eliminado con éxito por **{usuario_actual}**.")
-        st.rerun()
+        busqueda_material = st.text_input("Ingrese Código de Material a Buscar:", key="search_mod").upper().strip()
+        
+        if busqueda_material:
+            kanbans_encontrados = df_kanbans[df_kanbans['Material'] == busqueda_material]
+            
+            if kanbans_encontrados.empty:
+                st.warning(f"No se encontraron Kanbans registrados para el material: **{busqueda_material}**")
+            else:
+                opciones_k = kanbans_encontrados['N° Etiquetas'].tolist()
+                k_seleccionado = st.selectbox("Seleccione el Código K a modificar:", opciones_k)
+                
+                # Obtener la fila actual del Kanban a editar
+                row = kanbans_encontrados[kanbans_encontrados['N° Etiquetas'] == k_seleccionado].iloc[0]
+                
+                pkg_sugerido_mod = dict_pkg.get(busqueda_material, None)
+                if pkg_sugerido_mod:
+                    st.info(f"📦 Lote de Packaging de Referencia: **{pkg_sugerido_mod}** unidades.")
+                
+                st.markdown(f"**Modificando Kanban:** `{k_seleccionado}` | **Material:** `{busqueda_material}`")
+                
+                m_col1, m_col2, m_col3 = st.columns(3)
+                
+                with m_col1:
+                    m_centro = st.text_input("Centro", value=str(row['Centro'] or "A110"), key="m_centro")
+                    
+                    m_tipo_soporte = st.selectbox("Tipo de Kanban", ["GAVETA", "TARJETA"], key="m_soporte")
+                    if m_tipo_soporte == "GAVETA":
+                        m_tamano_medio = st.selectbox("Tamaño Gaveta", OPCIONES_GAVETA, key="m_tam_gav")
+                    else:
+                        m_tamano_medio = st.selectbox("Tipo Tarjeta/Contenedor", OPCIONES_SOPORTE_TARJETA, key="m_tam_tarj")
+
+                with m_col2:
+                    alm_orig_val = row['Almacén Origen'] if row['Almacén Origen'] in LISTA_ALMACENES else "L010"
+                    alm_dest_val = row['Almacen Destino'] if row['Almacen Destino'] in LISTA_ALMACENES else "P140"
+                    
+                    m_almacen_origen = st.selectbox("Almacén Origen", LISTA_ALMACENES, index=LISTA_ALMACENES.index(alm_orig_val), key="m_alm_orig")
+                    m_almacen_destino = st.selectbox("Almacén Destino", LISTA_ALMACENES, index=LISTA_ALMACENES.index(alm_dest_val), key="m_alm_dest")
+                    
+                    m_es_interno = (m_almacen_origen != "L010")
+                    m_tipo_etiqueta_sap = "KI" if m_es_interno else "KE"
+                    
+                    if m_es_interno:
+                        puestos_orig_disp = ALMACENES_PUESTOS.get(m_almacen_origen, [])
+                        m_puesto_origen = st.selectbox("Puesto Origen", ["-- Opcional / Seleccionar --"] + puestos_orig_disp, key="m_p_orig")
+                        if m_puesto_origen == "-- Opcional / Seleccionar --":
+                            m_puesto_origen = str(row['Puesto trabajo Origen'] or '')
+                    else:
+                        m_puesto_origen = None
+                        st.caption("Puesto Origen: No aplica (Externo L010)")
+                    
+                    puestos_dest_disp = ALMACENES_PUESTOS.get(m_almacen_destino, [])
+                    curr_p_dest = str(row['Puesto de trabajo destino'] or '')
+                    idx_dest = (puestos_dest_disp.index(curr_p_dest) + 1) if curr_p_dest in puestos_dest_disp else 0
+                    
+                    m_puesto_dest_sel = st.selectbox("Puesto Destino", ["-- Seleccionar / Nuevo --"] + puestos_dest_disp, index=idx_dest, key="m_p_dest")
+                    if m_puesto_dest_sel == "-- Seleccionar / Nuevo --":
+                        m_puesto_destino = st.text_input("Escriba Puesto Destino", value=curr_p_dest, key="m_p_dest_text").upper().strip()
+                    else:
+                        m_puesto_destino = m_puesto_dest_sel
+
+                with m_col3:
+                    m_cant_repo = st.number_input("Cantidad Reposición", min_value=0.0, value=float(row['Cantidad Reposicion'] or 0.0), step=1.0, key="m_cant_repo")
+                    m_cant_pp = st.number_input("Cantidad Punto Pedido", min_value=0.0, value=float(row['Cantidad Punto de Pedido'] or 0.0), step=1.0, key="m_cant_pp")
+                    
+                    unidades_opts = ["UN", "M", "L", "KG"]
+                    curr_un = str(row['Unidad Reposicion'] or "UN")
+                    idx_un = unidades_opts.index(curr_un) if curr_un in unidades_opts else 0
+                    m_unidad = st.selectbox("Unidad Base", unidades_opts, index=idx_un, key="m_un")
+                    
+                    m_dias_prep = st.number_input("Días Abastecimiento", min_value=0, value=int(row['Tiempo preparación abast. (en días)'] or 1), key="m_dias")
+
+                if st.button("💾 Guardar Cambios del Kanban", type="primary"):
+                    m_puesto_destino = MAPEO_PUESTOS.get(m_puesto_destino, m_puesto_destino)
+                    if m_puesto_origen:
+                        m_puesto_origen = MAPEO_PUESTOS.get(m_puesto_origen, m_puesto_origen)
+
+                    if not m_puesto_destino:
+                        st.error("❌ El Puesto Destino es obligatorio.")
+                    elif pkg_sugerido_mod and (m_cant_repo == 0 or m_cant_repo % pkg_sugerido_mod != 0):
+                        st.error(f"❌ REGLA DE PACKAGING: La Cantidad ({int(m_cant_repo)}) debe ser múltiplo exacto de {pkg_sugerido_mod}.")
+                    else:
+                        fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        usuario_actual = st.session_state['usuario_email']
+                        
+                        idx_target = df_kanbans[df_kanbans['N° Etiquetas'] == k_seleccionado].index[0]
+                        
+                        df_kanbans.loc[idx_target, 'Tipo Etiqueta'] = m_tipo_etiqueta_sap
+                        df_kanbans.loc[idx_target, 'Centro'] = m_centro
+                        df_kanbans.loc[idx_target, 'Almacén Origen'] = m_almacen_origen
+                        df_kanbans.loc[idx_target, 'Almacen Destino'] = m_almacen_destino
+                        df_kanbans.loc[idx_target, 'Puesto trabajo Origen'] = m_puesto_origen if m_puesto_origen else None
+                        df_kanbans.loc[idx_target, 'Puesto de trabajo destino'] = m_puesto_destino
+                        df_kanbans.loc[idx_target, 'Cantidad Reposicion'] = m_cant_repo
+                        df_kanbans.loc[idx_target, 'Unidad Reposicion'] = m_unidad
+                        df_kanbans.loc[idx_target, 'Cantidad Punto de Pedido'] = m_cant_pp
+                        df_kanbans.loc[idx_target, 'Tiempo preparación abast. (en días)'] = m_dias_prep
+                        df_kanbans.loc[idx_target, 'Fecha Modificación'] = fecha_actual
+                        df_kanbans.loc[idx_target, 'Usuario Modificación'] = usuario_actual
+                        
+                        guardar_datos(df_kanbans)
+                        registrar_log("MODIFICAR", k_seleccionado, busqueda_material, usuario_actual)
+                        st.success(f"✅ ¡Kanban **{k_seleccionado}** actualizado correctamente por **{usuario_actual}**!")
+                        st.rerun()
+
+    # ----------------------------------
+    # SECCIÓN DE ELIMINACIÓN
+    # ----------------------------------
+    with col_del:
+        st.subheader("🗑️ Eliminar Kanban")
+        st.warning("Al eliminar un Kanban, su código K se libera y se registra en la auditoría.")
+        
+        k_a_eliminar = st.selectbox(
+            "Seleccione Código K a eliminar:", 
+            options=["-- Seleccionar --"] + list(df_kanbans['N° Etiquetas'].unique()),
+            key="del_k_select"
+        )
+        
+        if st.button("🗑️ Eliminar Definitivamente") and k_a_eliminar != "-- Seleccionar --":
+            mat_afectado = df_kanbans[df_kanbans['N° Etiquetas'] == k_a_eliminar]['Material'].values[0]
+            usuario_actual = st.session_state['usuario_email']
+            
+            df_kanbans = df_kanbans[df_kanbans['N° Etiquetas'] != k_a_eliminar]
+            guardar_datos(df_kanbans)
+            registrar_log("ELIMINAR", k_a_eliminar, mat_afectado, usuario_actual)
+            st.success(f"♻️ Kanban **{k_a_eliminar}** eliminado con éxito.")
+            st.rerun()
 
 # ==========================================
 # TAB 3: EXPORTAR DATOS
