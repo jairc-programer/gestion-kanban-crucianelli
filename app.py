@@ -28,17 +28,27 @@ MAPEO_PUESTOS = {
     "L010": "PRINCIPAL"
 }
 
-PUESTOS_MASTER = sorted([
-    "APUNCHAS", "ARCUCH01", "ARM_HORQ", "ARMBAR01", "ARMCUERP", "ARMDOSIF", "ARMTOLV", 
-    "ARM_MAZ1", "ARTOLVAS", "CARGAFIN", "CORTE_01", "CORTE_02", "HOSPITAL", "LAVADO01", 
-    "MECANIZA", "MONFIN01", "MONFIN02", "MONFIN03", "MONFIN04", "MONTIN01", "MONTIN02", 
-    "MONTIN03", "MONTIN04", "MONTJAD1", "MTJBARAP", "MTJF01PD", "MTJF02PD", "MTJF03PD", 
-    "MTJPRS", "MURFINAL", "PINTURA1", "PINTURA2", "POSVENTA", "PRENBAL1", "PRINCIPAL", 
-    "PROTOTIPO", "ROSC_REM", "SOLDCHA1", "SOLDMADR", "SOLDMAN1", "SOLDMAN2", "SOLDMAN3", 
-    "SOLDMAN4", "SOLDMAN5", "SOLDMAN6", "SOLDMAN7", "SOLDMAP1", "SOLDMAP2", "SOLDMAP3", 
-    "SOLROB06", "SOLROB08", "SOLROB09", "SOLROB10", "SOLROB12", "SOLROB13", "SOLROB14", 
-    "SOLROB15", "SOLROB16", "SOLROB17", "SUBCONJU", "TURBINAS"
-])
+# DICCIONARIO ESTRUCTURADO: ALMACÉN -> PUESTOS PERMITIDOS
+ALMACENES_PUESTOS = {
+    "P110": ["ARM_HORQ", "ARM_MAZ1", "CORTE_01", "MECANIZA", "PRENBAL1", "ROSC_REM"],
+    "P120": [
+        "APUNCHAS", "SOLDCHA1", "SOLDMADR", "SOLDMAN1", "SOLDMAN2", "SOLDMAN3", 
+        "SOLDMAN4", "SOLDMAN5", "SOLDMAN6", "SOLDMAN7", "SOLDMAP1", "SOLDMAP2", 
+        "SOLDMAP3", "SOLROB06", "SOLROB08", "SOLROB09", "SOLROB10", "SOLROB12", 
+        "SOLROB13", "SOLROB14", "SOLROB15", "SOLROB16", "SOLROB17"
+    ],
+    "P130": ["MONTIN01", "MONTIN02", "MONTIN03", "MONTIN04", "MONTJAD1"],
+    "P140": ["LAVADO01", "PINTURA1", "PINTURA2"],
+    "P150": ["MONFIN01", "MONFIN02", "MONFIN03", "MONFIN04", "MTJBARAP", "MTJF01PD", "MTJF02PD", "MTJF03PD", "MTJPRS"],
+    "P160": ["ARCUCH01", "ARMBAR01", "ARMCUERP", "ARMDOSIF", "ARTOLVAS", "SUBCONJU", "TURBINAS"],
+    "P180": ["CARGAFIN", "MURFINAL"],
+    "P190": ["HOSPITAL"],
+    "CC01": ["POSVENTA"],
+    "ID01": ["PROTOTIPO"],
+    "L010": ["PRINCIPAL"]
+}
+
+LISTA_ALMACENES = list(ALMACENES_PUESTOS.keys())
 
 def cargar_datos():
     if os.path.exists(DB_FILE):
@@ -122,7 +132,7 @@ st.markdown("---")
 tabs = st.tabs(["➕ Crear Nuevo Kanban", "📋 Lista y Eliminar", "📊 Exportar Datos", "📜 Historial Auditoría"])
 
 # ==========================================
-# TAB 1: CREAR KANBAN
+# TAB 1: CREAR KANBAN CON RESTRICCIÓN DE PUESTOS
 # ==========================================
 with tabs[0]:
     st.subheader("Alta de Nuevo Kanban")
@@ -131,7 +141,6 @@ with tabs[0]:
     
     with col1:
         centro = st.text_input("Centro", value="A110")
-        
         material = st.text_input("Código de Material (ej. PB005075)", max_chars=9).upper().strip()
         
         # Validar Packaging
@@ -147,18 +156,10 @@ with tabs[0]:
                 "PALLET CHICO", "PALLET GRANDE", "CANASTO", 
                 "CAPACHO CHICO", "CAPACHO GRANDE", "RACK"
             ])
-            
-        opciones_puesto_dest = ["-- Seleccionar / Nuevo --"] + PUESTOS_MASTER
-        puesto_dest_sel = st.selectbox("Puesto de Trabajo Destino", opciones_puesto_dest)
-        
-        if puesto_dest_sel == "-- Seleccionar / Nuevo --":
-            puesto_destino = st.text_input("Escriba el Puesto Destino", max_chars=8).upper().strip()
-        else:
-            puesto_destino = puesto_dest_sel
 
     with col2:
-        almacen_origen = st.selectbox("Almacén Origen", ["L010", "P110", "P120", "P130", "P140", "P150", "P160", "P170", "P180", "P190"])
-        almacen_destino = st.selectbox("Almacén Destino", ["P140", "P160", "P120", "P130", "P150", "P180", "P110", "P190", "L010"])
+        almacen_origen = st.selectbox("Almacén Origen", LISTA_ALMACENES, index=LISTA_ALMACENES.index("L010"))
+        almacen_destino = st.selectbox("Almacén Destino", LISTA_ALMACENES, index=LISTA_ALMACENES.index("P140"))
         
         es_interno = (almacen_origen != "L010")
         
@@ -166,8 +167,11 @@ with tabs[0]:
             tipo_etiqueta_sap = "KI"
             st.markdown("🟡 **Estado:** :green[**ABASTECIMIENTO INTERNO (KI)**]")
             
-            opciones_puesto_orig = ["-- Opcional / Seleccionar --"] + PUESTOS_MASTER
-            puesto_orig_sel = st.selectbox("Puesto de Trabajo Origen", opciones_puesto_orig)
+            # Puestos filtrados según Almacén Origen
+            puestos_origen_disponibles = ALMACENES_PUESTOS.get(almacen_origen, [])
+            opciones_puesto_orig = ["-- Opcional / Seleccionar --"] + puestos_origen_disponibles
+            puesto_orig_sel = st.selectbox(f"Puesto Origen (Filtrado por {almacen_origen})", opciones_puesto_orig)
+            
             if puesto_orig_sel == "-- Opcional / Seleccionar --":
                 puesto_origen = st.text_input("Escriba Puesto Origen", max_chars=8).upper().strip()
             else:
@@ -178,11 +182,20 @@ with tabs[0]:
             puesto_origen = None
             st.text_input("Puesto de Trabajo Origen", value="- No aplica (Externo L010) -", disabled=True)
 
+        # Puestos filtrados según Almacén Destino
+        puestos_destino_disponibles = ALMACENES_PUESTOS.get(almacen_destino, [])
+        opciones_puesto_dest = ["-- Seleccionar / Nuevo --"] + puestos_destino_disponibles
+        puesto_dest_sel = st.selectbox(f"Puesto Destino (Filtrado por {almacen_destino})", opciones_puesto_dest)
+        
+        if puesto_dest_sel == "-- Seleccionar / Nuevo --":
+            puesto_destino = st.text_input("Escriba el Puesto Destino", max_chars=8).upper().strip()
+        else:
+            puesto_destino = puesto_dest_sel
+
     with col3:
         default_cant = float(pkg_sugerido) if pkg_sugerido else 0.0
         cant_repo = st.number_input("Cantidad Reposición (Lote)", min_value=0.0, value=default_cant, step=1.0)
         
-        # Alerta visual previa
         if pkg_sugerido and cant_repo > 0 and (cant_repo % pkg_sugerido != 0):
             st.warning(f"⚠️ Atención: Para creaciones nuevas, la cantidad ({int(cant_repo)}) debe ser múltiplo de {pkg_sugerido}.")
             
@@ -206,7 +219,6 @@ with tabs[0]:
         if puesto_origen:
             puesto_origen = MAPEO_PUESTOS.get(puesto_origen, puesto_origen)
 
-        # VALIDACIONES STRICTAS PARA NUEVAS CREACIONES
         if not material or not puesto_destino:
             st.error("❌ El Código de Material y el Puesto Destino son obligatorios.")
         elif not re.match(r'^[A-Z]{2,3}\d{6}$', material):
@@ -240,7 +252,7 @@ with tabs[0]:
                 df_kanbans = pd.concat([df_kanbans, pd.DataFrame([nuevo_registro])], ignore_index=True)
                 guardar_datos(df_kanbans)
                 registrar_log("CREAR", proximo_k_val, material)
-                st.success(f"✅ ¡Kanban **{proximo_k_val}** creado correctamente respetando las reglas!")
+                st.success(f"✅ ¡Kanban **{proximo_k_val}** creado correctamente!")
                 st.rerun()
 
 # ==========================================
@@ -269,9 +281,9 @@ with tabs[1]:
 
     def colorear_filas(val):
         if val == 'KE':
-            return 'background-color: #FFF3CD; color: #856404; font-weight: bold;' # Amarillo
+            return 'background-color: #FFF3CD; color: #856404; font-weight: bold;'
         elif val == 'KI':
-            return 'background-color: #D4EDDA; color: #155724; font-weight: bold;' # Verde
+            return 'background-color: #D4EDDA; color: #155724; font-weight: bold;'
         return ''
 
     st.dataframe(
