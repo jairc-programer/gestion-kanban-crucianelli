@@ -8,6 +8,146 @@ import pytz
 
 st.set_page_config(page_title="Gestor de Kanbans - Crucianelli", layout="wide")
 
+# ==========================================
+# ESTILOS CSS PERSONALIZADOS (ESTILO IMAGEN 2)
+# ==========================================
+st.markdown("""
+<style>
+    /* Fondo general */
+    .stApp {
+        background-color: #0e1117;
+        color: #e0e0e0;
+    }
+
+    /* Ocultar barra superior por defecto de Streamlit */
+    header {visibility: hidden;}
+
+    /* Contenedor tipo Tarjeta Premium */
+    div[data-testid="stVerticalBlock"] > div:has(div.card-container) {
+        background: rgba(22, 27, 34, 0.6);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        padding: 18px;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Tarjetas de Métricas / KPIs */
+    div[data-testid="stMetric"] {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 10px;
+        padding: 12px 16px;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+    
+    div[data-testid="stMetricLabel"] {
+        font-size: 0.82rem !important;
+        color: #909296 !important;
+        font-weight: 500;
+    }
+    
+    div[data-testid="stMetricValue"] {
+        font-size: 1.8rem !important;
+        color: #ffffff !important;
+        font-weight: 600;
+    }
+
+    /* Personalización de Pestañas (Tabs) estilo cápsula */
+    div[data-baseweb="tab-list"] {
+        gap: 8px;
+        background-color: transparent;
+        border-bottom: none !important;
+        margin-bottom: 15px;
+    }
+
+    div[data-baseweb="tab"] {
+        height: 38px;
+        border-radius: 8px !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        background-color: rgba(255, 255, 255, 0.02) !important;
+        color: #c1c2c5 !important;
+        padding: 0px 16px !important;
+        font-size: 0.88rem !important;
+        font-weight: 500 !important;
+    }
+
+    div[data-baseweb="tab"][aria-selected="true"] {
+        border: 1px solid #a83232 !important;
+        background-color: rgba(168, 50, 50, 0.15) !important;
+        color: #ff8e8e !important;
+    }
+
+    /* Campos de Entrada / Inputs y Selects */
+    .stTextInput input, .stSelectbox select, div[data-baseweb="select"] > div {
+        border-radius: 8px !important;
+        background-color: rgba(255, 255, 255, 0.04) !important;
+        border: 1px solid rgba(255, 255, 255, 0.12) !important;
+        color: #ffffff !important;
+    }
+
+    /* Focus en inputs */
+    .stTextInput input:focus, div[data-baseweb="select"]:focus-within {
+        border-color: #4a90e2 !important;
+        box-shadow: 0 0 0 1px #4a90e2 !important;
+    }
+
+    /* Botones primarios y secundarios */
+    div.stButton > button {
+        border-radius: 8px !important;
+        font-weight: 500 !important;
+        transition: all 0.2s ease;
+    }
+
+    div.stButton > button[kind="primary"] {
+        background-color: #8b2626 !important;
+        border: 1px solid #b33636 !important;
+    }
+
+    div.stButton > button[kind="primary"]:hover {
+        background-color: #a83232 !important;
+        box-shadow: 0 0 10px rgba(168, 50, 50, 0.4);
+    }
+
+    /* Estado destacado badge */
+    .badge-estado {
+        background: rgba(217, 119, 6, 0.2);
+        border: 1px solid #d97706;
+        color: #fbbf24;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        display: inline-block;
+        margin-bottom: 10px;
+    }
+
+    .badge-interno {
+        background: rgba(16, 185, 129, 0.2);
+        border: 1px solid #10b981;
+        color: #34d399;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        display: inline-block;
+        margin-bottom: 10px;
+    }
+
+    /* Caja contenedora para la cabecera */
+    .header-box {
+        background: rgba(22, 27, 34, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        padding: 12px 24px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # Configuración de Zona Horaria Argentina
 ARG_TZ = pytz.timezone('America/Argentina/Buenos_Aires')
 
@@ -25,13 +165,8 @@ LOG_COLUMNS = [
     "Medio", "Almacén_Destino", "Puesto_Destino", "Usuario"
 ]
 
-# ==========================================
-# GESTIÓN DE USUARIOS PERSISTENTES
-# ==========================================
 def cargar_usuarios():
-    usuarios_default = {
-        "jairc@crucianelli.com": "procesojair"
-    }
+    usuarios_default = {"jairc@crucianelli.com": "procesojair"}
     if os.path.exists(USERS_FILE):
         try:
             with open(USERS_FILE, "r", encoding="utf-8") as f:
@@ -48,7 +183,6 @@ def guardar_usuarios(usuarios_dict):
 
 USUARIOS_REGISTRADOS = cargar_usuarios()
 
-# ESTRUCTURA DE COLUMNAS COMPLETA PARA LA TABLA Z
 COLUMNS = [
     'N° Etiquetas', 'Tipo Etiqueta', 'Tipo Kanban', 'Medio', 'Material', 'Centro', 
     'Almacén Origen', 'Almacen Destino', 'Puesto trabajo Origen', 
@@ -59,12 +193,8 @@ COLUMNS = [
 ]
 
 MAPEO_PUESTOS = {
-    "ARM HORQ": "ARM_HORQ",
-    "SOLDROB08": "SOLROB08",
-    "PREBAL01": "PRENBAL1",
-    "ALMACÉN": "PRINCIPAL",
-    "LOGISTICA": "PRINCIPAL",
-    "L010": "PRINCIPAL"
+    "ARM HORQ": "ARM_HORQ", "SOLDROB08": "SOLROB08", "PREBAL01": "PRENBAL1",
+    "ALMACÉN": "PRINCIPAL", "LOGISTICA": "PRINCIPAL", "L010": "PRINCIPAL"
 }
 
 ALMACENES_PUESTOS = {
@@ -87,30 +217,20 @@ ALMACENES_PUESTOS = {
 }
 
 LISTA_ALMACENES = list(ALMACENES_PUESTOS.keys())
-
-OPCIONES_SOPORTE_TARJETA = [
-    "SIN MEDIO DEFINIDO", "PALLET CHICO", "PALLET GRANDE", 
-    "CANASTO", "CAPACHO CHICO", "CAPACHO GRANDE", "RACK"
-]
+OPCIONES_SOPORTE_TARJETA = ["SIN MEDIO DEFINIDO", "PALLET CHICO", "PALLET GRANDE", "CANASTO", "CAPACHO CHICO", "CAPACHO GRANDE", "RACK"]
 OPCIONES_GAVETA = ["S", "M", "L", "XL"]
 
-# ==========================================
-# GESTIÓN DE SESIÓN Y LOGIN / REGISTRO
-# ==========================================
 if 'usuario_email' not in st.session_state:
     st.session_state['usuario_email'] = None
 
 if not st.session_state['usuario_email']:
     st.title("📦 Sistema de Gestión de Kanbans - Crucianelli")
-    
     col_auth, _ = st.columns([1.5, 2])
     with col_auth:
         tab_login, tab_register = st.tabs(["🔐 Iniciar Sesión", "📝 Registrarse"])
-        
         with tab_login:
             email_input = st.text_input("Correo electrónico (@crucianelli.com):", key="log_email").strip().lower()
             password_input = st.text_input("Contraseña:", type="password", key="log_pass")
-            
             if st.button("Ingresar", type="primary", use_container_width=True):
                 if not email_input or not password_input:
                     st.error("❌ Complete correo y contraseña.")
@@ -121,58 +241,44 @@ if not st.session_state['usuario_email']:
                     st.success(f"Bienvenido/a {email_input}")
                     st.rerun()
                 else:
-                    st.error("❌ Credenciales incorrectas o usuario no registrado.")
-
+                    st.error("❌ Credenciales incorrectas.")
         with tab_register:
             reg_email = st.text_input("Correo corporativo (@crucianelli.com):", key="reg_email").strip().lower()
             reg_pass1 = st.text_input("Cree su contraseña:", type="password", key="reg_pass1")
             reg_pass2 = st.text_input("Confirme su contraseña:", type="password", key="reg_pass2")
-            
             if st.button("Crear Cuenta", use_container_width=True):
                 if not reg_email or not reg_pass1 or not reg_pass2:
                     st.error("❌ Complete todos los campos.")
                 elif not reg_email.endswith("@crucianelli.com"):
-                    st.error("❌ El correo debe ser obligatoriamente @crucianelli.com.")
+                    st.error("❌ El correo debe ser @crucianelli.com.")
                 elif reg_pass1 != reg_pass2:
                     st.error("❌ Las contraseñas no coinciden.")
                 elif reg_email in USUARIOS_REGISTRADOS:
-                    st.warning("⚠️ Este usuario ya se encuentra registrado. Inicie sesión directamente.")
+                    st.warning("⚠️ Usuario ya registrado.")
                 else:
                     USUARIOS_REGISTRADOS[reg_email] = reg_pass1
                     guardar_usuarios(USUARIOS_REGISTRADOS)
-                    st.success("✅ ¡Cuenta creada exitosamente! Ya puede iniciar sesión.")
+                    st.success("✅ ¡Cuenta creada exitosamente!")
     st.stop()
 
-# ==========================================
-# FUNCIONES DE BASE DE DATOS Y AUDITORÍA
-# ==========================================
 def cargar_datos():
     if os.path.exists(DB_FILE):
         df = pd.read_excel(DB_FILE, sheet_name=SHEET_NAME)
         for col in COLUMNS:
             if col not in df.columns:
                 df[col] = None
-                
-        # DEDUCCIÓN AUTOMÁTICA DEL TIPO DE KANBAN:
-        # Si Lote de Reposicion == Lote Punto de Pedido -> GAVETA, caso contrario -> TARJETA
         def determinar_tipo_kanban(row):
             cant_repo = row.get('Cantidad Reposicion')
             cant_pp = row.get('Cantidad Punto de Pedido')
-            
             try:
                 if pd.notna(cant_repo) and pd.notna(cant_pp):
-                    if float(cant_repo) == float(cant_pp):
-                        return "GAVETA"
-                    else:
-                        return "TARJETA"
+                    return "GAVETA" if float(cant_repo) == float(cant_pp) else "TARJETA"
             except (ValueError, TypeError):
                 pass
             return "TARJETA"
-            
         df['Tipo Kanban'] = df.apply(determinar_tipo_kanban, axis=1)
         return df[COLUMNS]
-    else:
-        return pd.DataFrame(columns=COLUMNS)
+    return pd.DataFrame(columns=COLUMNS)
 
 def cargar_packaging():
     if os.path.exists(PKG_FILE):
@@ -203,19 +309,12 @@ def cargar_logs():
 def registrar_log(accion, codigo_k, material, medio, alm_dest, puesto_dest, usuario):
     now = obtener_fecha_hora_arg()
     df_actual = cargar_logs()
-    
     if pd.isna(medio) or str(medio).strip() in ["None", "nan", "N/A", ""]:
         medio = "SIN MEDIO DEFINIDO"
-        
     nuevo_log = pd.DataFrame([{
-        "Fecha_Hora": now,
-        "Acción": accion,
-        "Código_K": codigo_k,
-        "Material": material,
-        "Medio": str(medio),
-        "Almacén_Destino": alm_dest,
-        "Puesto_Destino": puesto_dest,
-        "Usuario": usuario
+        "Fecha_Hora": now, "Acción": accion, "Código_K": codigo_k,
+        "Material": material, "Medio": str(medio), "Almacén_Destino": alm_dest,
+        "Puesto_Destino": puesto_dest, "Usuario": usuario
     }])
     df_final = pd.concat([df_actual, nuevo_log], ignore_index=True)
     df_final.to_csv(LOG_FILE, index=False)
@@ -223,76 +322,60 @@ def registrar_log(accion, codigo_k, material, medio, alm_dest, puesto_dest, usua
 def obtener_siguiente_codigo_k(df):
     if df.empty or df['N° Etiquetas'].dropna().empty:
         return "K00000001"
-    
-    numeros = []
-    for val in df['N° Etiquetas'].dropna():
-        match = re.search(r'\d+', str(val))
-        if match:
-            numeros.append(int(match.group(0)))
-            
+    numeros = [int(m.group(0)) for val in df['N° Etiquetas'].dropna() if (m := re.search(r'\d+', str(val)))]
     if not numeros:
         return "K00000001"
-        
     set_numeros = set(numeros)
     max_num = max(numeros)
-    
     for i in range(1, max_num + 1):
         if i not in set_numeros:
             return f"K{i:08d}"
-            
     return f"K{max_num + 1:08d}"
 
 df_kanbans = cargar_datos()
 dict_pkg = cargar_packaging()
 
 # ==========================================
-# CABECERA Y METRICAS / KPIS
+# CABECERA ESTILIZADA (MARCO SUPERIOR)
 # ==========================================
-col_title, col_user = st.columns([4, 1])
-with col_title:
-    st.title("📦 Sistema de Gestión de Kanbans - Crucianelli")
-with col_user:
-    st.write(f"👤 **Usuario:** `{st.session_state['usuario_email']}`")
-    if st.button("Cerrar Sesión"):
+st.markdown(f"""
+<div class="header-box">
+    <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="font-size: 1.8rem;">📦</span>
+        <h2 style="margin: 0; padding: 0; color: #f0f6fc; font-weight: 600; font-size: 1.5rem;">Sistema de Gestión de Kanbans - Crucianelli</h2>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# Botón salir en columna superior
+col_head_space, col_logout = st.columns([5, 1])
+with col_logout:
+    if st.button("Cerrar Sesión", use_container_width=True):
         st.session_state['usuario_email'] = None
         st.rerun()
 
+# Métricas Principales
 total_k = len(df_kanbans)
 internos_k = len(df_kanbans[df_kanbans['Tipo Etiqueta'] == 'KI'])
 externos_k = len(df_kanbans[df_kanbans['Tipo Etiqueta'] == 'KE'])
 proximo_k_val = obtener_siguiente_codigo_k(df_kanbans)
 
-val_fecha_str = "-"
-val_detalle_str = "Sin registros"
-
-df_logs_temp = cargar_logs()
-if not df_logs_temp.empty:
-    ultimo_reg = df_logs_temp.iloc[-1]
-    val_fecha_str = str(ultimo_reg['Fecha_Hora'])
-    usr = str(ultimo_reg['Usuario']).split('@')[0] if pd.notna(ultimo_reg['Usuario']) else ""
-    acc = str(ultimo_reg['Acción']) if pd.notna(ultimo_reg['Acción']) else ""
-    k_code = str(ultimo_reg['Código_K']) if pd.notna(ultimo_reg['Código_K']) else ""
-    val_detalle_str = f"{usr} ({acc} {k_code})"
-
-kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
+kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 kpi1.metric("Total Kanbans", total_k)
 kpi2.metric("Internos (KI)", internos_k)
 kpi3.metric("Externos (KE)", externos_k)
 kpi4.metric("Próximo Código K", proximo_k_val)
 
-with kpi5:
-    st.caption("Última Modificación (UTC-3)")
-    st.markdown(f"**{val_fecha_str}**")
-    st.caption(val_detalle_str)
+st.markdown("<br>", unsafe_allow_html=True)
 
-st.markdown("---")
-
+# Pestañas Principales
 tabs = st.tabs(["➕ Crear Nuevo Kanban", "✏️ Modificar y Eliminar", "📊 Exportar Datos", "📜 Historial Auditoría"])
 
 # ==========================================
 # TAB 1: CREAR KANBAN
 # ==========================================
 with tabs[0]:
+    st.markdown('<div class="card-container">', unsafe_allow_html=True)
     st.subheader("Alta de Nuevo Kanban")
     
     col1, col2, col3 = st.columns(3)
@@ -303,7 +386,7 @@ with tabs[0]:
         
         pkg_sugerido = dict_pkg.get(material, None)
         if pkg_sugerido:
-            st.info(f"📦 **Lote de Packaging requerido:** {pkg_sugerido} unidades (o sus múltiplos)")
+            st.info(f"📦 **Lote Packaging:** {pkg_sugerido} unidades (o múltiplos)")
         
         tipo_soporte = st.selectbox("Tipo de Kanban", ["GAVETA", "TARJETA"])
         
@@ -322,51 +405,30 @@ with tabs[0]:
         
         if es_interno:
             tipo_etiqueta_sap = "KI"
-            st.markdown("🟡 **Estado:** :green[**ABASTECIMIENTO INTERNO (KI)**]")
-            
+            st.markdown('<span class="badge-interno">ABASTECIMIENTO INTERNO (KI)</span>', unsafe_allow_html=True)
             puestos_origen_disponibles = ALMACENES_PUESTOS.get(almacen_origen, [])
             opciones_puesto_orig = ["-- Opcional / Seleccionar --"] + puestos_origen_disponibles
-            puesto_orig_sel = st.selectbox(f"Puesto Origen (Filtrado por {almacen_origen})", opciones_puesto_orig)
-            
-            if puesto_orig_sel == "-- Opcional / Seleccionar --":
-                puesto_origen = st.text_input("Escriba Puesto Origen", max_chars=8).upper().strip()
-            else:
-                puesto_origen = puesto_orig_sel
+            puesto_orig_sel = st.selectbox(f"Puesto Origen ({almacen_origen})", opciones_puesto_orig)
+            puesto_origen = st.text_input("Escriba Puesto Origen", max_chars=8).upper().strip() if puesto_orig_sel == "-- Opcional / Seleccionar --" else puesto_orig_sel
         else:
             tipo_etiqueta_sap = "KE"
-            st.markdown("🟡 **Estado:** :orange[**ABASTECIMIENTO EXTERNO (KE - L010)**]")
+            st.markdown('<span class="badge-estado">ABASTECIMIENTO EXTERNO (KE - L010)</span>', unsafe_allow_html=True)
             puesto_origen = None
             st.text_input("Puesto de Trabajo Origen", value="- No aplica (Externo L010) -", disabled=True)
 
         puestos_destino_disponibles = ALMACENES_PUESTOS.get(almacen_destino, [])
         opciones_puesto_dest = ["-- Seleccionar / Nuevo --"] + puestos_destino_disponibles
-        puesto_dest_sel = st.selectbox(f"Puesto Destino (Filtrado por {almacen_destino})", opciones_puesto_dest)
-        
-        if puesto_dest_sel == "-- Seleccionar / Nuevo --":
-            puesto_destino = st.text_input("Escriba el Puesto Destino", max_chars=8).upper().strip()
-        else:
-            puesto_destino = puesto_dest_sel
+        puesto_dest_sel = st.selectbox(f"Puesto Destino ({almacen_destino})", opciones_puesto_dest)
+        puesto_destino = st.text_input("Escriba el Puesto Destino", max_chars=8).upper().strip() if puesto_dest_sel == "-- Seleccionar / Nuevo --" else puesto_dest_sel
 
     with col3:
         default_cant = float(pkg_sugerido) if pkg_sugerido else 0.0
         cant_repo = st.number_input("Cantidad Reposición (Lote)", min_value=0.0, value=default_cant, step=1.0)
         
         if pkg_sugerido and cant_repo > 0 and (cant_repo % pkg_sugerido != 0):
-            st.warning(f"⚠️ Atención: La cantidad ({int(cant_repo)}) debe ser múltiplo de {pkg_sugerido}.")
+            st.warning(f"⚠️ Cantidad debe ser múltiplo de {pkg_sugerido}.")
             
-        if tipo_soporte == "GAVETA":
-            cant_pp = st.number_input(
-                "Cantidad Punto de Pedido (Igual al Lote por ser Gaveta)", 
-                value=cant_repo, 
-                disabled=True
-            )
-        else:
-            cant_pp = st.number_input(
-                "Cantidad Punto de Pedido (Menor al Lote)", 
-                min_value=0.0, 
-                step=1.0
-            )
-
+        cant_pp = st.number_input("Cantidad Punto de Pedido (Igual al Lote)", value=cant_repo, disabled=True) if tipo_soporte == "GAVETA" else st.number_input("Cantidad Punto de Pedido (Menor al Lote)", min_value=0.0, step=1.0)
         unidad = st.selectbox("Unidad Base", ["UN", "M", "L", "KG"])
         dias_prep = st.number_input("Tiempo Preparación / Días Abast.", min_value=0, value=1)
 
@@ -377,56 +439,42 @@ with tabs[0]:
             puesto_origen = MAPEO_PUESTOS.get(puesto_origen, puesto_origen)
 
         if not material or not puesto_destino:
-            st.error("❌ El Código de Material y el Puesto Destino son obligatorios.")
+            st.error("❌ El Código de Material y Puesto Destino son obligatorios.")
         elif not re.match(r'^[A-Z]{2,3}\d{6}$', material):
-            st.error("❌ Formato de Material inválido. Debe tener 2 o 3 letras seguidas de 6 números (ej. PB005075).")
+            st.error("❌ Formato de Material inválido (ej. PB005075).")
         elif tipo_soporte == "TARJETA" and cant_pp >= cant_repo:
-            st.error(f"❌ Regla de TARJETA: El Punto de Pedido ({cant_pp}) debe ser MENOR a la Cantidad de Reposición ({cant_repo}).")
+            st.error("❌ El Punto de Pedido debe ser MENOR a la Reposición en Tarjetas.")
         elif pkg_sugerido and (cant_repo == 0 or cant_repo % pkg_sugerido != 0):
-            st.error(f"❌ REGLA DE PACKAGING: La Cantidad de Reposición ({int(cant_repo)}) debe ser un múltiplo exacto de {pkg_sugerido} unidades para este material.")
+            st.error(f"❌ La cantidad debe ser múltiplo exacto de {pkg_sugerido}.")
         else:
-            duplicados = df_kanbans[
-                (df_kanbans['Material'] == material) & 
-                (df_kanbans['Puesto de trabajo destino'] == puesto_destino)
-            ]
-            
+            duplicados = df_kanbans[(df_kanbans['Material'] == material) & (df_kanbans['Puesto de trabajo destino'] == puesto_destino)]
             if not duplicados.empty:
-                st.error(f"⚠️ Ya existe un Kanban activo ({duplicados.iloc[0]['N° Etiquetas']}) para el Material '{material}' en el Puesto '{puesto_destino}'.")
+                st.error(f"⚠️ Ya existe un Kanban activo ({duplicados.iloc[0]['N° Etiquetas']}) para este Material y Puesto.")
             else:
                 fecha_actual = obtener_fecha_hora_arg()
                 usuario_actual = st.session_state['usuario_email']
-                
                 nuevo_registro = {
-                    'N° Etiquetas': proximo_k_val,
-                    'Tipo Etiqueta': tipo_etiqueta_sap,
-                    'Tipo Kanban': tipo_soporte,
-                    'Medio': medio_str,
-                    'Material': material,
-                    'Centro': centro,
-                    'Almacén Origen': almacen_origen,
-                    'Almacen Destino': almacen_destino,
+                    'N° Etiquetas': proximo_k_val, 'Tipo Etiqueta': tipo_etiqueta_sap,
+                    'Tipo Kanban': tipo_soporte, 'Medio': medio_str, 'Material': material,
+                    'Centro': centro, 'Almacén Origen': almacen_origen, 'Almacen Destino': almacen_destino,
                     'Puesto trabajo Origen': puesto_origen if puesto_origen else None,
-                    'Puesto de trabajo destino': puesto_destino,
-                    'Cantidad Reposicion': cant_repo,
-                    'Unidad Reposicion': unidad,
-                    'Cantidad Punto de Pedido': cant_pp,
+                    'Puesto de trabajo destino': puesto_destino, 'Cantidad Reposicion': cant_repo,
+                    'Unidad Reposicion': unidad, 'Cantidad Punto de Pedido': cant_pp,
                     'Tiempo preparación abast. (en días)': dias_prep,
-                    'Fecha Modificación': fecha_actual,
-                    'Usuario Modificación': usuario_actual
+                    'Fecha Modificación': fecha_actual, 'Usuario Modificación': usuario_actual
                 }
-                
                 df_kanbans = pd.concat([df_kanbans, pd.DataFrame([nuevo_registro])], ignore_index=True)
                 guardar_datos(df_kanbans)
                 registrar_log("CREO", proximo_k_val, material, medio_str, almacen_destino, puesto_destino, usuario_actual)
-                st.success(f"✅ ¡Kanban **{proximo_k_val}** ({tipo_soporte} - {medio_str}) creado correctamente por **{usuario_actual}**!")
+                st.success(f"✅ ¡Kanban **{proximo_k_val}** creado correctamente!")
                 st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ==========================================
-# TAB 2: CONSULTA, MODIFICACIÓN Y ELIMINACIÓN
+# TAB 2: CONSULTA Y MODIFICACIÓN
 # ==========================================
 with tabs[1]:
     st.subheader("📋 Registro General de Kanbans")
-    
     col_f1, col_f2 = st.columns(2)
     with col_f1:
         filtro_mat = st.text_input("🔍 Buscar por Material, Código K o Usuario:").strip().upper()
@@ -440,63 +488,32 @@ with tabs[1]:
             df_mostrar['N° Etiquetas'].astype(str).str.contains(filtro_mat, na=False) |
             df_mostrar['Usuario Modificación'].astype(str).str.upper().str.contains(filtro_mat, na=False)
         ]
-        
     if filtro_tipo == "KE - Externo":
         df_mostrar = df_mostrar[df_mostrar['Tipo Etiqueta'] == 'KE']
     elif filtro_tipo == "KI - Interno":
         df_mostrar = df_mostrar[df_mostrar['Tipo Etiqueta'] == 'KI']
 
-    def colorear_filas(val):
-        if val == 'KE':
-            return 'background-color: #FFF3CD; color: #856404; font-weight: bold;'
-        elif val == 'KI':
-            return 'background-color: #D4EDDA; color: #155724; font-weight: bold;'
-        return ''
-
-    st.dataframe(
-        df_mostrar.style.map(colorear_filas, subset=['Tipo Etiqueta']),
-        use_container_width=True
-    )
-    
+    st.dataframe(df_mostrar, use_container_width=True)
     st.markdown("---")
     
     col_mod, col_del = st.columns([2, 1])
-    
-    # ----------------------------------
-    # SECCIÓN DE MODIFICACIÓN
-    # ----------------------------------
     with col_mod:
         st.subheader("✏️ Modificar Kanban Existente")
-        
         busqueda_material = st.text_input("Ingrese Código de Material a Buscar:", key="search_mod").upper().strip()
-        
         if busqueda_material:
             kanbans_encontrados = df_kanbans[df_kanbans['Material'] == busqueda_material]
-            
             if kanbans_encontrados.empty:
-                st.warning(f"No se encontraron Kanbans registrados para el material: **{busqueda_material}**")
+                st.warning(f"No se encontraron Kanbans para: **{busqueda_material}**")
             else:
-                opciones_k = kanbans_encontrados['N° Etiquetas'].tolist()
-                k_seleccionado = st.selectbox("Seleccione el Código K a modificar:", opciones_k)
-                
+                k_seleccionado = st.selectbox("Seleccione el Código K:", kanbans_encontrados['N° Etiquetas'].tolist())
                 row = kanbans_encontrados[kanbans_encontrados['N° Etiquetas'] == k_seleccionado].iloc[0]
                 
-                pkg_sugerido_mod = dict_pkg.get(busqueda_material, None)
-                if pkg_sugerido_mod:
-                    st.info(f"📦 Lote de Packaging de Referencia: **{pkg_sugerido_mod}** unidades.")
-                
-                st.markdown(f"**Modificando Kanban:** `{k_seleccionado}` | **Material:** `{busqueda_material}`")
-                
                 m_col1, m_col2, m_col3 = st.columns(3)
-                
                 with m_col1:
                     m_centro = st.text_input("Centro", value=str(row['Centro'] or "A110"), key="m_centro")
-                    
                     curr_m = str(row['Medio'] or "")
                     default_tipo = str(row.get('Tipo Kanban', 'TARJETA')).upper()
-                    
                     m_tipo_soporte = st.selectbox("Tipo de Kanban", ["GAVETA", "TARJETA"], index=0 if default_tipo == "GAVETA" else 1, key="m_soporte")
-                    
                     if m_tipo_soporte == "GAVETA":
                         curr_tam = curr_m.replace("GAVETA", "").strip()
                         idx_gav = OPCIONES_GAVETA.index(curr_tam) if curr_tam in OPCIONES_GAVETA else 0
@@ -510,137 +527,59 @@ with tabs[1]:
                 with m_col2:
                     alm_orig_val = row['Almacén Origen'] if row['Almacén Origen'] in LISTA_ALMACENES else "L010"
                     alm_dest_val = row['Almacen Destino'] if row['Almacen Destino'] in LISTA_ALMACENES else "P140"
-                    
                     m_almacen_origen = st.selectbox("Almacén Origen", LISTA_ALMACENES, index=LISTA_ALMACENES.index(alm_orig_val), key="m_alm_orig")
                     m_almacen_destino = st.selectbox("Almacén Destino", LISTA_ALMACENES, index=LISTA_ALMACENES.index(alm_dest_val), key="m_alm_dest")
-                    
                     m_es_interno = (m_almacen_origen != "L010")
                     m_tipo_etiqueta_sap = "KI" if m_es_interno else "KE"
-                    
-                    if m_es_interno:
-                        puestos_orig_disp = ALMACENES_PUESTOS.get(m_almacen_origen, [])
-                        m_puesto_origen = st.selectbox("Puesto Origen", ["-- Opcional / Seleccionar --"] + puestos_orig_disp, key="m_p_orig")
-                        if m_puesto_origen == "-- Opcional / Seleccionar --":
-                            m_puesto_origen = str(row['Puesto trabajo Origen'] or '')
-                    else:
-                        m_puesto_origen = None
-                        st.caption("Puesto Origen: No aplica (Externo L010)")
-                    
-                    puestos_dest_disp = ALMACENES_PUESTOS.get(m_almacen_destino, [])
-                    curr_p_dest = str(row['Puesto de trabajo destino'] or '')
-                    idx_dest = (puestos_dest_disp.index(curr_p_dest) + 1) if curr_p_dest in puestos_dest_disp else 0
-                    
-                    m_puesto_dest_sel = st.selectbox("Puesto Destino", ["-- Seleccionar / Nuevo --"] + puestos_dest_disp, index=idx_dest, key="m_p_dest")
-                    if m_puesto_dest_sel == "-- Seleccionar / Nuevo --":
-                        m_puesto_destino = st.text_input("Escriba Puesto Destino", value=curr_p_dest, key="m_p_dest_text").upper().strip()
-                    else:
-                        m_puesto_destino = m_puesto_dest_sel
+                    m_puesto_origen = st.text_input("Puesto Origen", value=str(row['Puesto trabajo Origen'] or '')) if m_es_interno else None
+                    m_puesto_destino = st.text_input("Puesto Destino", value=str(row['Puesto de trabajo destino'] or ''), key="m_p_dest_text").upper().strip()
 
                 with m_col3:
                     m_cant_repo = st.number_input("Cantidad Reposición", min_value=0.0, value=float(row['Cantidad Reposicion'] or 0.0), step=1.0, key="m_cant_repo")
-                    
-                    if m_tipo_soporte == "GAVETA":
-                        m_cant_pp = st.number_input(
-                            "Cantidad Punto Pedido (Igual al Lote)", 
-                            value=m_cant_repo, 
-                            disabled=True, 
-                            key="m_cant_pp_gav"
-                        )
-                    else:
-                        m_cant_pp = st.number_input(
-                            "Cantidad Punto Pedido", 
-                            min_value=0.0, 
-                            value=float(row['Cantidad Punto de Pedido'] or 0.0), 
-                            step=1.0, 
-                            key="m_cant_pp_tarj"
-                        )
-                    
-                    unidades_opts = ["UN", "M", "L", "KG"]
-                    curr_un = str(row['Unidad Reposicion'] or "UN")
-                    idx_un = unidades_opts.index(curr_un) if curr_un in unidades_opts else 0
-                    m_unidad = st.selectbox("Unidad Base", unidades_opts, index=idx_un, key="m_un")
-                    
+                    m_cant_pp = st.number_input("Cantidad Punto Pedido", value=m_cant_repo, disabled=True, key="m_cant_pp_gav") if m_tipo_soporte == "GAVETA" else st.number_input("Cantidad Punto Pedido", min_value=0.0, value=float(row['Cantidad Punto de Pedido'] or 0.0), step=1.0, key="m_cant_pp_tarj")
+                    m_unidad = st.selectbox("Unidad Base", ["UN", "M", "L", "KG"], index=["UN", "M", "L", "KG"].index(str(row['Unidad Reposicion'] or "UN")), key="m_un")
                     m_dias_prep = st.number_input("Días Abastecimiento", min_value=0, value=int(row['Tiempo preparación abast. (en días)'] or 1), key="m_dias")
 
-                if st.button("💾 Guardar Cambios del Kanban", type="primary"):
-                    m_puesto_destino = MAPEO_PUESTOS.get(m_puesto_destino, m_puesto_destino)
-                    if m_puesto_origen:
-                        m_puesto_origen = MAPEO_PUESTOS.get(m_puesto_origen, m_puesto_origen)
+                if st.button("💾 Guardar Cambios", type="primary"):
+                    fecha_actual = obtener_fecha_hora_arg()
+                    usuario_actual = st.session_state['usuario_email']
+                    idx_target = df_kanbans[df_kanbans['N° Etiquetas'] == k_seleccionado].index[0]
+                    
+                    df_kanbans.loc[idx_target, 'Tipo Etiqueta'] = m_tipo_etiqueta_sap
+                    df_kanbans.loc[idx_target, 'Tipo Kanban'] = m_tipo_soporte
+                    df_kanbans.loc[idx_target, 'Medio'] = m_medio_str
+                    df_kanbans.loc[idx_target, 'Centro'] = m_centro
+                    df_kanbans.loc[idx_target, 'Almacén Origen'] = m_almacen_origen
+                    df_kanbans.loc[idx_target, 'Almacen Destino'] = m_almacen_destino
+                    df_kanbans.loc[idx_target, 'Puesto trabajo Origen'] = m_puesto_origen
+                    df_kanbans.loc[idx_target, 'Puesto de trabajo destino'] = m_puesto_destino
+                    df_kanbans.loc[idx_target, 'Cantidad Reposicion'] = m_cant_repo
+                    df_kanbans.loc[idx_target, 'Unidad Reposicion'] = m_unidad
+                    df_kanbans.loc[idx_target, 'Cantidad Punto de Pedido'] = m_cant_pp
+                    df_kanbans.loc[idx_target, 'Tiempo preparación abast. (en días)'] = m_dias_prep
+                    df_kanbans.loc[idx_target, 'Fecha Modificación'] = fecha_actual
+                    df_kanbans.loc[idx_target, 'Usuario Modificación'] = usuario_actual
+                    
+                    guardar_datos(df_kanbans)
+                    registrar_log("ACTUALIZO", k_seleccionado, busqueda_material, m_medio_str, m_almacen_destino, m_puesto_destino, usuario_actual)
+                    st.success(f"✅ Kanban **{k_seleccionado}** actualizado.")
+                    st.rerun()
 
-                    if not m_puesto_destino:
-                        st.error("❌ El Puesto Destino es obligatorio.")
-                    elif m_tipo_soporte == "TARJETA" and m_cant_pp >= m_cant_repo:
-                        st.error(f"❌ Regla de TARJETA: El Punto de Pedido ({m_cant_pp}) debe ser MENOR al Lote de Reposición ({m_cant_repo}).")
-                    elif pkg_sugerido_mod and (m_cant_repo == 0 or m_cant_repo % pkg_sugerido_mod != 0):
-                        st.error(f"❌ REGLA DE PACKAGING: La Cantidad ({int(m_cant_repo)}) debe ser múltiplo exacto de {pkg_sugerido_mod}.")
-                    else:
-                        fecha_actual = obtener_fecha_hora_arg()
-                        usuario_actual = st.session_state['usuario_email']
-                        
-                        idx_target = df_kanbans[df_kanbans['N° Etiquetas'] == k_seleccionado].index[0]
-                        
-                        df_kanbans.loc[idx_target, 'Tipo Etiqueta'] = m_tipo_etiqueta_sap
-                        df_kanbans.loc[idx_target, 'Tipo Kanban'] = m_tipo_soporte
-                        df_kanbans.loc[idx_target, 'Medio'] = m_medio_str
-                        df_kanbans.loc[idx_target, 'Centro'] = m_centro
-                        df_kanbans.loc[idx_target, 'Almacén Origen'] = m_almacen_origen
-                        df_kanbans.loc[idx_target, 'Almacen Destino'] = m_almacen_destino
-                        df_kanbans.loc[idx_target, 'Puesto trabajo Origen'] = m_puesto_origen if m_puesto_origen else None
-                        df_kanbans.loc[idx_target, 'Puesto de trabajo destino'] = m_puesto_destino
-                        df_kanbans.loc[idx_target, 'Cantidad Reposicion'] = m_cant_repo
-                        df_kanbans.loc[idx_target, 'Unidad Reposicion'] = m_unidad
-                        df_kanbans.loc[idx_target, 'Cantidad Punto de Pedido'] = m_cant_pp
-                        df_kanbans.loc[idx_target, 'Tiempo preparación abast. (en días)'] = m_dias_prep
-                        df_kanbans.loc[idx_target, 'Fecha Modificación'] = fecha_actual
-                        df_kanbans.loc[idx_target, 'Usuario Modificación'] = usuario_actual
-                        
-                        guardar_datos(df_kanbans)
-                        registrar_log("ACTUALIZO", k_seleccionado, busqueda_material, m_medio_str, m_almacen_destino, m_puesto_destino, usuario_actual)
-                        st.success(f"✅ ¡Kanban **{k_seleccionado}** ({m_tipo_soporte} - {m_medio_str}) actualizado correctamente por **{usuario_actual}**!")
-                        st.rerun()
-
-    # ----------------------------------
-    # SECCIÓN DE ELIMINACIÓN DE KANBAN
-    # ----------------------------------
     with col_del:
         st.subheader("🗑️ Eliminar Kanban")
-        st.warning("Al eliminar un Kanban, se recupera el último medio activo registrado en el historial.")
-        
-        k_a_eliminar = st.selectbox(
-            "Seleccione Código K a eliminar:", 
-            options=["-- Seleccionar --"] + list(df_kanbans['N° Etiquetas'].dropna().unique()),
-            key="del_k_select"
-        )
-        
+        k_a_eliminar = st.selectbox("Seleccione Código K:", options=["-- Seleccionar --"] + list(df_kanbans['N° Etiquetas'].dropna().unique()), key="del_k_select")
         if st.button("🗑️ Eliminar Definitivamente") and k_a_eliminar != "-- Seleccionar --":
             fila_del = df_kanbans[df_kanbans['N° Etiquetas'] == k_a_eliminar].iloc[0]
             mat_afectado = str(fila_del['Material']).strip().upper()
             alm_dest_del = str(fila_del['Almacen Destino']).strip()
             puesto_dest_del = str(fila_del['Puesto de trabajo destino']).strip().upper()
-            
-            val_medio_del = fila_del.get('Medio', None)
-            
-            if pd.isna(val_medio_del) or str(val_medio_del).strip() in ["None", "nan", "N/A", ""]:
-                df_l = cargar_logs()
-                if not df_l.empty:
-                    logs_relacion = df_l[
-                        (df_l['Código_K'] == k_a_eliminar) & 
-                        (df_l['Material'].astype(str).str.strip().str.upper() == mat_afectado) & 
-                        (df_l['Puesto_Destino'].astype(str).str.strip().str.upper() == puesto_dest_del) & 
-                        (df_l['Medio'].notna()) & 
-                        (~df_l['Medio'].isin(["None", "nan", "N/A", ""]))
-                    ]
-                    if not logs_relacion.empty:
-                        val_medio_del = logs_relacion.iloc[-1]['Medio']
-            
-            medio_del_str = str(val_medio_del) if (pd.notna(val_medio_del) and str(val_medio_del).strip() not in ["None", "nan", "N/A", ""]) else "SIN MEDIO DEFINIDO"
+            val_medio_del = fila_del.get('Medio', "SIN MEDIO DEFINIDO")
             usuario_actual = st.session_state['usuario_email']
             
             df_kanbans = df_kanbans[df_kanbans['N° Etiquetas'] != k_a_eliminar]
             guardar_datos(df_kanbans)
-            
-            registrar_log("ELIMINO", k_a_eliminar, mat_afectado, medio_del_str, alm_dest_del, puesto_dest_del, usuario_actual)
-            st.success(f"♻️ Kanban **{k_a_eliminar}** para **{mat_afectado}** en **{puesto_dest_del}** eliminado con éxito.")
+            registrar_log("ELIMINO", k_a_eliminar, mat_afectado, str(val_medio_del), alm_dest_del, puesto_dest_del, usuario_actual)
+            st.success(f"♻️ Kanban **{k_a_eliminar}** eliminado con éxito.")
             st.rerun()
 
 # ==========================================
@@ -648,97 +587,26 @@ with tabs[1]:
 # ==========================================
 with tabs[2]:
     st.subheader("📊 Exportar Tabla Z Completa para SAP")
-    st.write("Descargue la **Tabla Z** actualizada con deducción automática de **Tipo Kanban**, medio de almacenamiento, fechas y usuarios:")
-    
     st.dataframe(df_kanbans, use_container_width=True)
     st.markdown("---")
-    
     col_exp1, col_exp2 = st.columns(2)
-    
     with col_exp1:
         excel_bytes = pd.ExcelWriter("TablaZ_Export.xlsx", engine='openpyxl')
         df_kanbans.to_excel(excel_bytes, sheet_name=SHEET_NAME, index=False)
         excel_bytes.close()
-        
         with open("TablaZ_Export.xlsx", "rb") as f:
-            st.download_button(
-                label="📥 Descargar Tabla Z en Excel (.xlsx)",
-                data=f,
-                file_name="TablaZ_Kanbans.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                type="primary"
-            )
-
+            st.download_button(label="📥 Descargar Tabla Z en Excel (.xlsx)", data=f, file_name="TablaZ_Kanbans.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary")
     with col_exp2:
         csv_data = df_kanbans.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📄 Descargar Tabla Z en CSV (.csv)",
-            data=csv_data,
-            file_name="TablaZ_Kanbans.csv",
-            mime="text/csv"
-        )
+        st.download_button(label="📄 Descargar Tabla Z en CSV (.csv)", data=csv_data, file_name="TablaZ_Kanbans.csv", mime="text/csv")
 
 # ==========================================
 # TAB 4: AUDITORÍA DE CAMBIOS
 # ==========================================
 with tabs[3]:
-    st.subheader("📜 Historial Completo y Filtrado de Modificaciones")
-    
+    st.subheader("📜 Historial Completo de Modificaciones")
     df_logs = cargar_logs()
-    
     if not df_logs.empty:
-        df_logs['Fecha_dt'] = pd.to_datetime(df_logs['Fecha_Hora'], errors='coerce')
-        
-        f_col1, f_col2, f_col3 = st.columns(3)
-        
-        valid_dates = df_logs['Fecha_dt'].dropna()
-        min_date = valid_dates.min().date() if not valid_dates.empty else datetime.now().date()
-        max_date = valid_dates.max().date() if not valid_dates.empty else datetime.now().date()
-        
-        with f_col1:
-            rango_fechas = st.date_input(
-                "📅 Seleccione Rango de Fechas:",
-                value=(min_date, max_date),
-                min_value=min_date,
-                max_value=max_date
-            )
-        
-        with f_col2:
-            usuarios_list = ["Todos"] + list(df_logs['Usuario'].dropna().unique())
-            usr_sel = st.selectbox("👤 Filtrar por Usuario:", usuarios_list)
-            
-        with f_col3:
-            acciones_list = ["Todas", "CREO", "ACTUALIZO", "ELIMINO"]
-            acc_sel = st.selectbox("⚡ Filtrar por Acción:", acciones_list)
-
-        df_logs_filtrado = df_logs.copy()
-        
-        if isinstance(rango_fechas, tuple) and len(rango_fechas) == 2:
-            f_inicio, f_fin = rango_fechas
-            df_logs_filtrado = df_logs_filtrado[
-                (df_logs_filtrado['Fecha_dt'].dt.date >= f_inicio) & 
-                (df_logs_filtrado['Fecha_dt'].dt.date <= f_fin)
-            ]
-            
-        if usr_sel != "Todos":
-            df_logs_filtrado = df_logs_filtrado[df_logs_filtrado['Usuario'] == usr_sel]
-            
-        if acc_sel != "Todas":
-            df_logs_filtrado = df_logs_filtrado[df_logs_filtrado['Acción'] == acc_sel]
-
-        df_logs_mostrar = df_logs_filtrado.drop(columns=['Fecha_dt']).sort_values(by="Fecha_Hora", ascending=False)
-
-        st.dataframe(df_logs_mostrar, use_container_width=True)
-        
-        col_down_log, _ = st.columns([1, 2])
-        with col_down_log:
-            csv_logs = df_logs_mostrar.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Descargar Reporte Filtrado (CSV)",
-                data=csv_logs,
-                file_name=f"Auditoria_Kanbans_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv",
-                type="primary"
-            )
+        st.dataframe(df_logs.sort_values(by="Fecha_Hora", ascending=False), use_container_width=True)
     else:
-        st.info("Aún no hay registros de cambios en el sistema.")
+        st.info("Sin registros de cambios aún.")
