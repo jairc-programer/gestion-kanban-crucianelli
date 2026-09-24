@@ -153,16 +153,23 @@ def cargar_datos():
             if col not in df.columns:
                 df[col] = None
                 
-        # Autocompletar Tipo Kanban si no existe explícitamente en archivos heredados
-        def deducir_tipo_kanban(row):
-            if pd.notna(row['Tipo Kanban']) and str(row['Tipo Kanban']).strip() != "":
-                return row['Tipo Kanban']
-            medio_val = str(row['Medio']).upper() if pd.notna(row['Medio']) else ""
-            if "GAVETA" in medio_val:
-                return "GAVETA"
+        # DEDUCCIÓN AUTOMÁTICA DEL TIPO DE KANBAN:
+        # Si Lote de Reposicion == Lote Punto de Pedido -> GAVETA, caso contrario -> TARJETA
+        def determinar_tipo_kanban(row):
+            cant_repo = row.get('Cantidad Reposicion')
+            cant_pp = row.get('Cantidad Punto de Pedido')
+            
+            try:
+                if pd.notna(cant_repo) and pd.notna(cant_pp):
+                    if float(cant_repo) == float(cant_pp):
+                        return "GAVETA"
+                    else:
+                        return "TARJETA"
+            except (ValueError, TypeError):
+                pass
             return "TARJETA"
             
-        df['Tipo Kanban'] = df.apply(deducir_tipo_kanban, axis=1)
+        df['Tipo Kanban'] = df.apply(determinar_tipo_kanban, axis=1)
         return df[COLUMNS]
     else:
         return pd.DataFrame(columns=COLUMNS)
@@ -198,7 +205,7 @@ def registrar_log(accion, codigo_k, material, medio, alm_dest, puesto_dest, usua
     df_actual = cargar_logs()
     
     if pd.isna(medio) or str(medio).strip() in ["None", "nan", "N/A", ""]:
-        medio = "NO ESPECIFICADO"
+        medio = "SIN MEDIO DEFINIDO"
         
     nuevo_log = pd.DataFrame([{
         "Fecha_Hora": now,
@@ -486,7 +493,7 @@ with tabs[1]:
                     m_centro = st.text_input("Centro", value=str(row['Centro'] or "A110"), key="m_centro")
                     
                     curr_m = str(row['Medio'] or "")
-                    default_tipo = str(row.get('Tipo Kanban', 'GAVETA')).upper() if pd.notna(row.get('Tipo Kanban')) else ("GAVETA" if "GAVETA" in curr_m.upper() else "TARJETA")
+                    default_tipo = str(row.get('Tipo Kanban', 'TARJETA')).upper()
                     
                     m_tipo_soporte = st.selectbox("Tipo de Kanban", ["GAVETA", "TARJETA"], index=0 if default_tipo == "GAVETA" else 1, key="m_soporte")
                     
@@ -597,7 +604,7 @@ with tabs[1]:
     # ----------------------------------
     with col_del:
         st.subheader("🗑️ Eliminar Kanban")
-        st.warning("Al eliminar un Kanban, se lee y recupera su último medio activo del historial según su Código K, Material y Puesto.")
+        st.warning("Al eliminar un Kanban, se recupera el último medio activo registrado en el historial.")
         
         k_a_eliminar = st.selectbox(
             "Seleccione Código K a eliminar:", 
@@ -611,10 +618,8 @@ with tabs[1]:
             alm_dest_del = str(fila_del['Almacen Destino']).strip()
             puesto_dest_del = str(fila_del['Puesto de trabajo destino']).strip().upper()
             
-            # 1. Intentar obtener el medio actual
             val_medio_del = fila_del.get('Medio', None)
             
-            # 2. BÚSQUEDA HISTÓRICA POR RELACIÓN EXACTA (Código K + Material + Puesto Destino)
             if pd.isna(val_medio_del) or str(val_medio_del).strip() in ["None", "nan", "N/A", ""]:
                 df_l = cargar_logs()
                 if not df_l.empty:
@@ -628,16 +633,14 @@ with tabs[1]:
                     if not logs_relacion.empty:
                         val_medio_del = logs_relacion.iloc[-1]['Medio']
             
-            medio_del_str = str(val_medio_del) if (pd.notna(val_medio_del) and str(val_medio_del).strip() not in ["None", "nan", "N/A", ""]) else "NO ESPECIFICADO"
+            medio_del_str = str(val_medio_del) if (pd.notna(val_medio_del) and str(val_medio_del).strip() not in ["None", "nan", "N/A", ""]) else "SIN MEDIO DEFINIDO"
             usuario_actual = st.session_state['usuario_email']
             
-            # Eliminar del DataFrame activo y guardar
             df_kanbans = df_kanbans[df_kanbans['N° Etiquetas'] != k_a_eliminar]
             guardar_datos(df_kanbans)
             
-            # Registrar en la auditoría guardando el medio físico recuperado
             registrar_log("ELIMINO", k_a_eliminar, mat_afectado, medio_del_str, alm_dest_del, puesto_dest_del, usuario_actual)
-            st.success(f"♻️ Kanban **{k_a_eliminar}** con medio **{medio_del_str}** para el material **{mat_afectado}** en **{puesto_dest_del}** eliminado con éxito.")
+            st.success(f"♻️ Kanban **{k_a_eliminar}** para **{mat_afectado}** en **{puesto_dest_del}** eliminado con éxito.")
             st.rerun()
 
 # ==========================================
@@ -645,7 +648,7 @@ with tabs[1]:
 # ==========================================
 with tabs[2]:
     st.subheader("📊 Exportar Tabla Z Completa para SAP")
-    st.write("Descargue el maestro de Kanbans activo con todas sus columnas de trazabilidad completa (**Tipo Kanban**, **Medio**, **Fecha de Modificación** y **Usuario**):")
+    st.write("Descargue la **Tabla Z** actualizada con deducción automática de **Tipo Kanban**, medio de almacenamiento, fechas y usuarios:")
     
     st.dataframe(df_kanbans, use_container_width=True)
     st.markdown("---")
