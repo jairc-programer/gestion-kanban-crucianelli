@@ -48,13 +48,14 @@ def guardar_usuarios(usuarios_dict):
 
 USUARIOS_REGISTRADOS = cargar_usuarios()
 
+# ESTRUCTURA DE COLUMNAS COMPLETA PARA LA TABLA Z
 COLUMNS = [
-    'N° Etiquetas', 'Tipo Etiqueta', 'Material', 'Centro', 
+    'N° Etiquetas', 'Tipo Etiqueta', 'Tipo Kanban', 'Medio', 'Material', 'Centro', 
     'Almacén Origen', 'Almacen Destino', 'Puesto trabajo Origen', 
     'Puesto de trabajo destino', 'Cantidad Reposicion', 
     'Unidad Reposicion', 'Cantidad Punto de Pedido', 
     'Tiempo preparación abast. (en días)',
-    'Fecha Modificación', 'Usuario Modificación', 'Medio'
+    'Fecha Modificación', 'Usuario Modificación'
 ]
 
 MAPEO_PUESTOS = {
@@ -87,7 +88,6 @@ ALMACENES_PUESTOS = {
 
 LISTA_ALMACENES = list(ALMACENES_PUESTOS.keys())
 
-# OPCIONES DE MEDIO FÍSICO (TARJETA INCLUYE 'SIN MEDIO DEFINIDO')
 OPCIONES_SOPORTE_TARJETA = [
     "SIN MEDIO DEFINIDO", "PALLET CHICO", "PALLET GRANDE", 
     "CANASTO", "CAPACHO CHICO", "CAPACHO GRANDE", "RACK"
@@ -152,6 +152,17 @@ def cargar_datos():
         for col in COLUMNS:
             if col not in df.columns:
                 df[col] = None
+                
+        # Autocompletar Tipo Kanban si no existe explícitamente en archivos heredados
+        def deducir_tipo_kanban(row):
+            if pd.notna(row['Tipo Kanban']) and str(row['Tipo Kanban']).strip() != "":
+                return row['Tipo Kanban']
+            medio_val = str(row['Medio']).upper() if pd.notna(row['Medio']) else ""
+            if "GAVETA" in medio_val:
+                return "GAVETA"
+            return "TARJETA"
+            
+        df['Tipo Kanban'] = df.apply(deducir_tipo_kanban, axis=1)
         return df[COLUMNS]
     else:
         return pd.DataFrame(columns=COLUMNS)
@@ -293,7 +304,6 @@ with tabs[0]:
             tamano_medio = st.selectbox("Tamaño Gaveta", OPCIONES_GAVETA)
             medio_str = f"GAVETA {tamano_medio}"
         else:
-            # Incluye opción "SIN MEDIO DEFINIDO"
             tamano_medio = st.selectbox("Medio / Soporte Físico", OPCIONES_SOPORTE_TARJETA)
             medio_str = tamano_medio
 
@@ -382,6 +392,8 @@ with tabs[0]:
                 nuevo_registro = {
                     'N° Etiquetas': proximo_k_val,
                     'Tipo Etiqueta': tipo_etiqueta_sap,
+                    'Tipo Kanban': tipo_soporte,
+                    'Medio': medio_str,
                     'Material': material,
                     'Centro': centro,
                     'Almacén Origen': almacen_origen,
@@ -393,14 +405,13 @@ with tabs[0]:
                     'Cantidad Punto de Pedido': cant_pp,
                     'Tiempo preparación abast. (en días)': dias_prep,
                     'Fecha Modificación': fecha_actual,
-                    'Usuario Modificación': usuario_actual,
-                    'Medio': medio_str
+                    'Usuario Modificación': usuario_actual
                 }
                 
                 df_kanbans = pd.concat([df_kanbans, pd.DataFrame([nuevo_registro])], ignore_index=True)
                 guardar_datos(df_kanbans)
                 registrar_log("CREO", proximo_k_val, material, medio_str, almacen_destino, puesto_destino, usuario_actual)
-                st.success(f"✅ ¡Kanban **{proximo_k_val}** ({medio_str}) creado correctamente por **{usuario_actual}**!")
+                st.success(f"✅ ¡Kanban **{proximo_k_val}** ({tipo_soporte} - {medio_str}) creado correctamente por **{usuario_actual}**!")
                 st.rerun()
 
 # ==========================================
@@ -475,7 +486,7 @@ with tabs[1]:
                     m_centro = st.text_input("Centro", value=str(row['Centro'] or "A110"), key="m_centro")
                     
                     curr_m = str(row['Medio'] or "")
-                    default_tipo = "GAVETA" if "GAVETA" in curr_m.upper() else "TARJETA"
+                    default_tipo = str(row.get('Tipo Kanban', 'GAVETA')).upper() if pd.notna(row.get('Tipo Kanban')) else ("GAVETA" if "GAVETA" in curr_m.upper() else "TARJETA")
                     
                     m_tipo_soporte = st.selectbox("Tipo de Kanban", ["GAVETA", "TARJETA"], index=0 if default_tipo == "GAVETA" else 1, key="m_soporte")
                     
@@ -562,6 +573,8 @@ with tabs[1]:
                         idx_target = df_kanbans[df_kanbans['N° Etiquetas'] == k_seleccionado].index[0]
                         
                         df_kanbans.loc[idx_target, 'Tipo Etiqueta'] = m_tipo_etiqueta_sap
+                        df_kanbans.loc[idx_target, 'Tipo Kanban'] = m_tipo_soporte
+                        df_kanbans.loc[idx_target, 'Medio'] = m_medio_str
                         df_kanbans.loc[idx_target, 'Centro'] = m_centro
                         df_kanbans.loc[idx_target, 'Almacén Origen'] = m_almacen_origen
                         df_kanbans.loc[idx_target, 'Almacen Destino'] = m_almacen_destino
@@ -573,11 +586,10 @@ with tabs[1]:
                         df_kanbans.loc[idx_target, 'Tiempo preparación abast. (en días)'] = m_dias_prep
                         df_kanbans.loc[idx_target, 'Fecha Modificación'] = fecha_actual
                         df_kanbans.loc[idx_target, 'Usuario Modificación'] = usuario_actual
-                        df_kanbans.loc[idx_target, 'Medio'] = m_medio_str
                         
                         guardar_datos(df_kanbans)
                         registrar_log("ACTUALIZO", k_seleccionado, busqueda_material, m_medio_str, m_almacen_destino, m_puesto_destino, usuario_actual)
-                        st.success(f"✅ ¡Kanban **{k_seleccionado}** ({m_medio_str}) actualizado correctamente por **{usuario_actual}**!")
+                        st.success(f"✅ ¡Kanban **{k_seleccionado}** ({m_tipo_soporte} - {m_medio_str}) actualizado correctamente por **{usuario_actual}**!")
                         st.rerun()
 
     # ----------------------------------
@@ -614,7 +626,6 @@ with tabs[1]:
                         (~df_l['Medio'].isin(["None", "nan", "N/A", ""]))
                     ]
                     if not logs_relacion.empty:
-                        # Extraer el medio de la última acción registrada de alta o modificación
                         val_medio_del = logs_relacion.iloc[-1]['Medio']
             
             medio_del_str = str(val_medio_del) if (pd.notna(val_medio_del) and str(val_medio_del).strip() not in ["None", "nan", "N/A", ""]) else "NO ESPECIFICADO"
@@ -633,8 +644,11 @@ with tabs[1]:
 # TAB 3: EXPORTAR DATOS
 # ==========================================
 with tabs[2]:
-    st.subheader("Exportar Datos para SAP")
-    st.write("Descargue la base de datos actualizada con la columna **Medio** incluida:")
+    st.subheader("📊 Exportar Tabla Z Completa para SAP")
+    st.write("Descargue el maestro de Kanbans activo con todas sus columnas de trazabilidad completa (**Tipo Kanban**, **Medio**, **Fecha de Modificación** y **Usuario**):")
+    
+    st.dataframe(df_kanbans, use_container_width=True)
+    st.markdown("---")
     
     col_exp1, col_exp2 = st.columns(2)
     
@@ -648,7 +662,8 @@ with tabs[2]:
                 label="📥 Descargar Tabla Z en Excel (.xlsx)",
                 data=f,
                 file_name="TablaZ_Kanbans.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="primary"
             )
 
     with col_exp2:
