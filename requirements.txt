@@ -5,4 +5,4 @@ streamlit
 pandas
 openpyxl
 pytz
-pip install plotly
+plotly
