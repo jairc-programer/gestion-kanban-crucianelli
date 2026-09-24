@@ -324,7 +324,20 @@ with tabs[0]:
         if pkg_sugerido and cant_repo > 0 and (cant_repo % pkg_sugerido != 0):
             st.warning(f"⚠️ Atención: La cantidad ({int(cant_repo)}) debe ser múltiplo de {pkg_sugerido}.")
             
-        cant_pp = st.number_input("Cantidad Punto de Pedido", min_value=0.0, step=1.0)
+        # Lógica auto-copia y bloqueo si es GAVETA
+        if tipo_soporte == "GAVETA":
+            cant_pp = st.number_input(
+                "Cantidad Punto de Pedido (Igual al Lote por ser Gaveta)", 
+                value=cant_repo, 
+                disabled=True
+            )
+        else:
+            cant_pp = st.number_input(
+                "Cantidad Punto de Pedido (Menor al Lote)", 
+                min_value=0.0, 
+                step=1.0
+            )
+
         unidad = st.selectbox("Unidad Base", ["UN", "M", "L", "KG"])
         dias_prep = st.number_input("Tiempo Preparación / Días Abast.", min_value=0, value=1)
 
@@ -334,22 +347,12 @@ with tabs[0]:
         if puesto_origen:
             puesto_origen = MAPEO_PUESTOS.get(puesto_origen, puesto_origen)
 
-        # Validación de Punto de Pedido según tipo de medio
-        es_valido_pp = True
-        msg_err_pp = ""
-        if tipo_soporte == "GAVETA" and cant_pp != cant_repo:
-            es_valido_pp = False
-            msg_err_pp = f"❌ Regla de GAVETA: El Punto de Pedido ({cant_pp}) debe ser EXACTAMENTE IGUAL al Lote de Reposición ({cant_repo})."
-        elif tipo_soporte == "TARJETA" and cant_pp >= cant_repo:
-            es_valido_pp = False
-            msg_err_pp = f"❌ Regla de TARJETA: El Punto de Pedido ({cant_pp}) debe ser MENOR al Lote de Reposición ({cant_repo})."
-
         if not material or not puesto_destino:
             st.error("❌ El Código de Material y el Puesto Destino son obligatorios.")
         elif not re.match(r'^[A-Z]{2,3}\d{6}$', material):
             st.error("❌ Formato de Material inválido. Debe tener 2 o 3 letras seguidas de 6 números (ej. PB005075).")
-        elif not es_valido_pp:
-            st.error(msg_err_pp)
+        elif tipo_soporte == "TARJETA" and cant_pp >= cant_repo:
+            st.error(f"❌ Regla de TARJETA: El Punto de Pedido ({cant_pp}) debe ser MENOR a la Cantidad de Reposición ({cant_repo}).")
         elif pkg_sugerido and (cant_repo == 0 or cant_repo % pkg_sugerido != 0):
             st.error(f"❌ REGLA DE PACKAGING: La Cantidad de Reposición ({int(cant_repo)}) debe ser un múltiplo exacto de {pkg_sugerido} unidades para este material.")
         else:
@@ -495,7 +498,23 @@ with tabs[1]:
 
                 with m_col3:
                     m_cant_repo = st.number_input("Cantidad Reposición", min_value=0.0, value=float(row['Cantidad Reposicion'] or 0.0), step=1.0, key="m_cant_repo")
-                    m_cant_pp = st.number_input("Cantidad Punto Pedido", min_value=0.0, value=float(row['Cantidad Punto de Pedido'] or 0.0), step=1.0, key="m_cant_pp")
+                    
+                    # Lógica auto-copia y bloqueo si es GAVETA en Modificación
+                    if m_tipo_soporte == "GAVETA":
+                        m_cant_pp = st.number_input(
+                            "Cantidad Punto Pedido (Igual al Lote)", 
+                            value=m_cant_repo, 
+                            disabled=True, 
+                            key="m_cant_pp_gav"
+                        )
+                    else:
+                        m_cant_pp = st.number_input(
+                            "Cantidad Punto Pedido", 
+                            min_value=0.0, 
+                            value=float(row['Cantidad Punto de Pedido'] or 0.0), 
+                            step=1.0, 
+                            key="m_cant_pp_tarj"
+                        )
                     
                     unidades_opts = ["UN", "M", "L", "KG"]
                     curr_un = str(row['Unidad Reposicion'] or "UN")
@@ -509,19 +528,10 @@ with tabs[1]:
                     if m_puesto_origen:
                         m_puesto_origen = MAPEO_PUESTOS.get(m_puesto_origen, m_puesto_origen)
 
-                    es_valido_pp_mod = True
-                    msg_err_pp_mod = ""
-                    if m_tipo_soporte == "GAVETA" and m_cant_pp != m_cant_repo:
-                        es_valido_pp_mod = False
-                        msg_err_pp_mod = f"❌ Regla de GAVETA: El Punto de Pedido ({m_cant_pp}) debe ser EXACTAMENTE IGUAL al Lote de Reposición ({m_cant_repo})."
-                    elif m_tipo_soporte == "TARJETA" and m_cant_pp >= m_cant_repo:
-                        es_valido_pp_mod = False
-                        msg_err_pp_mod = f"❌ Regla de TARJETA: El Punto de Pedido ({m_cant_pp}) debe ser MENOR al Lote de Reposición ({m_cant_repo})."
-
                     if not m_puesto_destino:
                         st.error("❌ El Puesto Destino es obligatorio.")
-                    elif not es_valido_pp_mod:
-                        st.error(msg_err_pp_mod)
+                    elif m_tipo_soporte == "TARJETA" and m_cant_pp >= m_cant_repo:
+                        st.error(f"❌ Regla de TARJETA: El Punto de Pedido ({m_cant_pp}) debe ser MENOR al Lote de Reposición ({m_cant_repo}).")
                     elif pkg_sugerido_mod and (m_cant_repo == 0 or m_cant_repo % pkg_sugerido_mod != 0):
                         st.error(f"❌ REGLA DE PACKAGING: La Cantidad ({int(m_cant_repo)}) debe ser múltiplo exacto de {pkg_sugerido_mod}.")
                     else:
