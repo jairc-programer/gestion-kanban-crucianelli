@@ -20,6 +20,11 @@ LOG_FILE = "historial_cambios.csv"
 USERS_FILE = "usuarios.json"
 SHEET_NAME = "Kanbans CRUCIANELLI"
 
+LOG_COLUMNS = [
+    "Fecha_Hora", "Acción", "Código_K", "Material", 
+    "Medio", "Almacén_Destino", "Puesto_Destino", "Usuario"
+]
+
 # ==========================================
 # GESTIÓN DE USUARIOS PERSISTENTES
 # ==========================================
@@ -160,8 +165,21 @@ def guardar_datos(df):
     with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:
         df.to_excel(writer, sheet_name=SHEET_NAME, index=False)
 
+def cargar_logs():
+    if os.path.exists(LOG_FILE):
+        try:
+            df_logs = pd.read_csv(LOG_FILE, on_bad_lines='skip')
+            for col in LOG_COLUMNS:
+                if col not in df_logs.columns:
+                    df_logs[col] = None
+            return df_logs[LOG_COLUMNS]
+        except Exception:
+            return pd.DataFrame(columns=LOG_COLUMNS)
+    return pd.DataFrame(columns=LOG_COLUMNS)
+
 def registrar_log(accion, codigo_k, material, medio, alm_dest, puesto_dest, usuario):
     now = obtener_fecha_hora_arg()
+    df_actual = cargar_logs()
     nuevo_log = pd.DataFrame([{
         "Fecha_Hora": now,
         "Acción": accion,
@@ -172,10 +190,8 @@ def registrar_log(accion, codigo_k, material, medio, alm_dest, puesto_dest, usua
         "Puesto_Destino": puesto_dest,
         "Usuario": usuario
     }])
-    if os.path.exists(LOG_FILE):
-        nuevo_log.to_csv(LOG_FILE, mode='a', header=False, index=False)
-    else:
-        nuevo_log.to_csv(LOG_FILE, mode='w', header=True, index=False)
+    df_final = pd.concat([df_actual, nuevo_log], ignore_index=True)
+    df_final.to_csv(LOG_FILE, index=False)
 
 def obtener_siguiente_codigo_k(df):
     if df.empty or df['N° Etiquetas'].dropna().empty:
@@ -222,15 +238,14 @@ proximo_k_val = obtener_siguiente_codigo_k(df_kanbans)
 val_fecha_str = "-"
 val_detalle_str = "Sin registros"
 
-if os.path.exists(LOG_FILE):
-    df_logs_temp = pd.read_csv(LOG_FILE)
-    if not df_logs_temp.empty:
-        ultimo_reg = df_logs_temp.iloc[-1]
-        val_fecha_str = str(ultimo_reg['Fecha_Hora'])
-        usr = str(ultimo_reg['Usuario']).split('@')[0]
-        acc = str(ultimo_reg['Acción'])
-        k_code = str(ultimo_reg['Código_K'])
-        val_detalle_str = f"{usr} ({acc} {k_code})"
+df_logs_temp = cargar_logs()
+if not df_logs_temp.empty:
+    ultimo_reg = df_logs_temp.iloc[-1]
+    val_fecha_str = str(ultimo_reg['Fecha_Hora'])
+    usr = str(ultimo_reg['Usuario']).split('@')[0] if pd.notna(ultimo_reg['Usuario']) else ""
+    acc = str(ultimo_reg['Acción']) if pd.notna(ultimo_reg['Acción']) else ""
+    k_code = str(ultimo_reg['Código_K']) if pd.notna(ultimo_reg['Código_K']) else ""
+    val_detalle_str = f"{usr} ({acc} {k_code})"
 
 kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
 kpi1.metric("Total Kanbans", total_k)
@@ -596,16 +611,17 @@ with tabs[2]:
 with tabs[3]:
     st.subheader("📜 Historial Completo y Filtrado de Modificaciones")
     
-    if os.path.exists(LOG_FILE):
-        df_logs = pd.read_csv(LOG_FILE)
-        
+    df_logs = cargar_logs()
+    
+    if not df_logs.empty:
         # Convertimos la columna Fecha_Hora a datetime para poder filtrar por fechas
         df_logs['Fecha_dt'] = pd.to_datetime(df_logs['Fecha_Hora'], errors='coerce')
         
         f_col1, f_col2, f_col3 = st.columns(3)
         
-        min_date = df_logs['Fecha_dt'].min().date() if not df_logs['Fecha_dt'].isna().all() else datetime.now().date()
-        max_date = df_logs['Fecha_dt'].max().date() if not df_logs['Fecha_dt'].isna().all() else datetime.now().date()
+        valid_dates = df_logs['Fecha_dt'].dropna()
+        min_date = valid_dates.min().date() if not valid_dates.empty else datetime.now().date()
+        max_date = valid_dates.max().date() if not valid_dates.empty else datetime.now().date()
         
         with f_col1:
             rango_fechas = st.date_input(
