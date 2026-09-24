@@ -5,11 +5,12 @@ import os
 import json
 from datetime import datetime
 import pytz
+import plotly.express as px
 
 st.set_page_config(page_title="Gestor de Kanbans - Crucianelli", layout="wide")
 
 # ==========================================
-# ESTILOS CSS PERSONALIZADOS (ESTILO IMAGEN 2)
+# ESTILOS CSS PERSONALIZADOS (DARK PREMIUM)
 # ==========================================
 st.markdown("""
 <style>
@@ -19,10 +20,9 @@ st.markdown("""
         color: #e0e0e0;
     }
 
-    /* Ocultar barra superior por defecto de Streamlit */
     header {visibility: hidden;}
 
-    /* Contenedor tipo Tarjeta Premium */
+    /* Contenedores */
     div[data-testid="stVerticalBlock"] > div:has(div.card-container) {
         background: rgba(22, 27, 34, 0.6);
         border: 1px solid rgba(255, 255, 255, 0.1);
@@ -53,7 +53,7 @@ st.markdown("""
         font-weight: 600;
     }
 
-    /* Personalización de Pestañas (Tabs) estilo cápsula */
+    /* Pestañas (Tabs) */
     div[data-baseweb="tab-list"] {
         gap: 8px;
         background-color: transparent;
@@ -78,7 +78,7 @@ st.markdown("""
         color: #ff8e8e !important;
     }
 
-    /* Campos de Entrada / Inputs y Selects */
+    /* Campos de Entrada */
     .stTextInput input, .stSelectbox select, div[data-baseweb="select"] > div {
         border-radius: 8px !important;
         background-color: rgba(255, 255, 255, 0.04) !important;
@@ -86,17 +86,9 @@ st.markdown("""
         color: #ffffff !important;
     }
 
-    /* Focus en inputs */
-    .stTextInput input:focus, div[data-baseweb="select"]:focus-within {
-        border-color: #4a90e2 !important;
-        box-shadow: 0 0 0 1px #4a90e2 !important;
-    }
-
-    /* Botones primarios y secundarios */
     div.stButton > button {
         border-radius: 8px !important;
         font-weight: 500 !important;
-        transition: all 0.2s ease;
     }
 
     div.stButton > button[kind="primary"] {
@@ -104,12 +96,6 @@ st.markdown("""
         border: 1px solid #b33636 !important;
     }
 
-    div.stButton > button[kind="primary"]:hover {
-        background-color: #a83232 !important;
-        box-shadow: 0 0 10px rgba(168, 50, 50, 0.4);
-    }
-
-    /* Estado destacado badge */
     .badge-estado {
         background: rgba(217, 119, 6, 0.2);
         border: 1px solid #d97706;
@@ -134,7 +120,6 @@ st.markdown("""
         margin-bottom: 10px;
     }
 
-    /* Caja contenedora para la cabecera */
     .header-box {
         background: rgba(22, 27, 34, 0.7);
         border: 1px solid rgba(255, 255, 255, 0.1);
@@ -148,7 +133,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Configuración de Zona Horaria Argentina
 ARG_TZ = pytz.timezone('America/Argentina/Buenos_Aires')
 
 def obtener_fecha_hora_arg():
@@ -336,7 +320,7 @@ df_kanbans = cargar_datos()
 dict_pkg = cargar_packaging()
 
 # ==========================================
-# CABECERA ESTILIZADA (MARCO SUPERIOR)
+# CABECERA ESTILIZADA
 # ==========================================
 st.markdown(f"""
 <div class="header-box">
@@ -347,14 +331,13 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Botón salir en columna superior
 col_head_space, col_logout = st.columns([5, 1])
 with col_logout:
     if st.button("Cerrar Sesión", use_container_width=True):
         st.session_state['usuario_email'] = None
         st.rerun()
 
-# Métricas Principales
+# Métricas Principales Superior
 total_k = len(df_kanbans)
 internos_k = len(df_kanbans[df_kanbans['Tipo Etiqueta'] == 'KI'])
 externos_k = len(df_kanbans[df_kanbans['Tipo Etiqueta'] == 'KE'])
@@ -368,13 +351,148 @@ kpi4.metric("Próximo Código K", proximo_k_val)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# Pestañas Principales
-tabs = st.tabs(["➕ Crear Nuevo Kanban", "✏️ Modificar y Eliminar", "📊 Exportar Datos", "📜 Historial Auditoría"])
+# Pestañas Principales (AÑADIDA PESTAÑA DE KPIs)
+tabs = st.tabs(["📈 Panel KPIs & Métricas", "➕ Crear Nuevo Kanban", "✏️ Modificar y Eliminar", "📊 Exportar Datos", "📜 Historial Auditoría"])
+
+# ==========================================
+# TAB 0: PANEL DE KPIS & MÉTRICAS (NUEVA)
+# ==========================================
+with tabs[0]:
+    st.subheader("📊 Panel Interactivo de KPIs y Analítica de Kanbans")
+    
+    df_logs_kpi = cargar_logs()
+    
+    # ---------------- FILTROS DE KPIS ----------------
+    with st.expander("🔍 Filtros de Análisis Temporal y Logística", expanded=True):
+        f_col1, f_col2, f_col3 = st.columns(3)
+        
+        with f_col1:
+            if not df_logs_kpi.empty:
+                df_logs_kpi['Fecha_dt'] = pd.to_datetime(df_logs_kpi['Fecha_Hora'], errors='coerce')
+                min_d = df_logs_kpi['Fecha_dt'].dropna().min().date()
+                max_d = df_logs_kpi['Fecha_dt'].dropna().max().date()
+            else:
+                min_d = datetime.now().date()
+                max_d = datetime.now().date()
+                
+            rango_fechas_kpi = st.date_input("Rango de Fechas:", value=(min_d, max_d), key="kpi_dates")
+
+        with f_col2:
+            alm_opts = ["Todos"] + list(df_kanbans['Almacen Destino'].dropna().unique())
+            f_alm = st.selectbox("Almacén Destino:", alm_opts, key="kpi_alm")
+
+        with f_col3:
+            usr_opts = ["Todos"] + (list(df_logs_kpi['Usuario'].dropna().unique()) if not df_logs_kpi.empty else [])
+            f_usr = st.selectbox("Usuario Responsable:", usr_opts, key="kpi_usr")
+
+    # Filtrado de logs según los controles
+    df_logs_filtrado = df_logs_kpi.copy() if not df_logs_kpi.empty else pd.DataFrame()
+    if not df_logs_filtrado.empty and isinstance(rango_fechas_kpi, tuple) and len(rango_fechas_kpi) == 2:
+        fi, ff = rango_fechas_kpi
+        df_logs_filtrado = df_logs_filtrado[
+            (df_logs_filtrado['Fecha_dt'].dt.date >= fi) & 
+            (df_logs_filtrado['Fecha_dt'].dt.date <= ff)
+        ]
+        if f_alm != "Todos":
+            df_logs_filtrado = df_logs_filtrado[df_logs_filtrado['Almacén_Destino'] == f_alm]
+        if f_usr != "Todos":
+            df_logs_filtrado = df_logs_filtrado[df_logs_filtrado['Usuario'] == f_usr]
+
+    # Tarjetas Métricas del Período
+    c_creados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'CREO']) if not df_logs_filtrado.empty else 0
+    c_actualizados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'ACTUALIZO']) if not df_logs_filtrado.empty else 0
+    c_eliminados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'ELIMINO']) if not df_logs_filtrado.empty else 0
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Movimientos en el Período", len(df_logs_filtrado))
+    m2.metric("✨ Kanbans Creados", c_creados)
+    m3.metric("✏️ Kanbans Modificados", c_actualizados)
+    m4.metric("🗑️ Kanbans Eliminados", c_eliminados)
+
+    st.markdown("---")
+
+    # ---------------- GRÁFICOS INTERACTIVOS ----------------
+    g_col1, g_col2 = st.columns(2)
+
+    with g_col1:
+        st.markdown("##### 🏭 Top Puestos de Trabajo Destino (Cantidad de Códigos K)")
+        df_puestos = df_kanbans['Puesto de trabajo destino'].value_counts().reset_index()
+        df_puestos.columns = ['Puesto Destino', 'Cantidad']
+        
+        if f_alm != "Todos":
+            puestos_permitidos = ALMACENES_PUESTOS.get(f_alm, [])
+            df_puestos = df_puestos[df_puestos['Puesto Destino'].isin(puestos_permitidos)]
+
+        fig_puestos = px.bar(
+            df_puestos.head(10), 
+            x='Cantidad', 
+            y='Puesto Destino', 
+            orientation='h',
+            text='Cantidad',
+            template="plotly_dark",
+            color='Cantidad',
+            color_continuous_scale='Reds'
+        )
+        fig_puestos.update_layout(yaxis={'categoryorder': 'total ascending'}, height=350, margin=dict(l=20, r=20, t=20, b=20))
+        st.plotly_chart(fig_puestos, use_container_width=True)
+
+    with g_col2:
+        st.markdown("##### 📈 Evolución de Movimientos en el Período (Creación / Edición / Baja)")
+        if not df_logs_filtrado.empty:
+            df_logs_filtrado['Fecha_Dia'] = df_logs_filtrado['Fecha_dt'].dt.strftime('%Y-%m-%d')
+            df_evolucion = df_logs_filtrado.groupby(['Fecha_Dia', 'Acción']).size().reset_index(name='Cantidad')
+            
+            fig_evol = px.line(
+                df_evolucion, 
+                x='Fecha_Dia', 
+                y='Cantidad', 
+                color='Acción',
+                markers=True,
+                template="plotly_dark",
+                color_discrete_map={'CREO': '#10b981', 'ACTUALIZO': '#f59e0b', 'ELIMINO': '#ef4444'}
+            )
+            fig_evol.update_layout(height=350, margin=dict(l=20, r=20, t=20, b=20), xaxis_title="Fecha", yaxis_title="Operaciones")
+            st.plotly_chart(fig_evol, use_container_width=True)
+        else:
+            st.info("Sin registros para graficar la evolución temporal en este rango.")
+
+    g_col3, g_col4 = st.columns(2)
+
+    with g_col3:
+        st.markdown("##### 📦 Proporción por Tipo de Kanban (Gaveta vs. Tarjeta)")
+        df_tipo_k = df_kanbans['Tipo Kanban'].value_counts().reset_index()
+        df_tipo_k.columns = ['Tipo', 'Cantidad']
+        fig_pie_tipo = px.pie(
+            df_tipo_k, 
+            names='Tipo', 
+            values='Cantidad', 
+            hole=0.4,
+            template="plotly_dark",
+            color_discrete_sequence=['#8b2626', '#4a90e2']
+        )
+        fig_pie_tipo.update_layout(height=320, margin=dict(l=20, r=20, t=20, b=20))
+        st.plotly_chart(fig_pie_tipo, use_container_width=True)
+
+    with g_col4:
+        st.markdown("##### 🏢 Distribución de Kanbans por Almacén Destino")
+        df_alm = df_kanbans['Almacen Destino'].value_counts().reset_index()
+        df_alm.columns = ['Almacén', 'Cantidad']
+        fig_alm = px.bar(
+            df_alm, 
+            x='Almacén', 
+            y='Cantidad', 
+            text='Cantidad',
+            template="plotly_dark",
+            color='Cantidad',
+            color_continuous_scale='Blugrn'
+        )
+        fig_alm.update_layout(height=320, margin=dict(l=20, r=20, t=20, b=20))
+        st.plotly_chart(fig_alm, use_container_width=True)
 
 # ==========================================
 # TAB 1: CREAR KANBAN
 # ==========================================
-with tabs[0]:
+with tabs[1]:
     st.markdown('<div class="card-container">', unsafe_allow_html=True)
     st.subheader("Alta de Nuevo Kanban")
     
@@ -473,7 +591,7 @@ with tabs[0]:
 # ==========================================
 # TAB 2: CONSULTA Y MODIFICACIÓN
 # ==========================================
-with tabs[1]:
+with tabs[2]:
     st.subheader("📋 Registro General de Kanbans")
     col_f1, col_f2 = st.columns(2)
     with col_f1:
@@ -585,7 +703,7 @@ with tabs[1]:
 # ==========================================
 # TAB 3: EXPORTAR DATOS
 # ==========================================
-with tabs[2]:
+with tabs[3]:
     st.subheader("📊 Exportar Tabla Z Completa para SAP")
     st.dataframe(df_kanbans, use_container_width=True)
     st.markdown("---")
@@ -603,7 +721,7 @@ with tabs[2]:
 # ==========================================
 # TAB 4: AUDITORÍA DE CAMBIOS
 # ==========================================
-with tabs[3]:
+with tabs[4]:
     st.subheader("📜 Historial Completo de Modificaciones")
     df_logs = cargar_logs()
     if not df_logs.empty:
