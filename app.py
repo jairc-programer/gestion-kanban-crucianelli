@@ -285,6 +285,20 @@ def cargar_logs():
             for col in LOG_COLUMNS:
                 if col not in df_logs.columns:
                     df_logs[col] = None
+            
+            # Normalización de términos de acciones históricas
+            mapeo_acciones = {
+                'CREAR': 'CREACIÓN',
+                'CREO': 'CREACIÓN',
+                'CREACION': 'CREACIÓN',
+                'MODIFICAR': 'MODIFICACIÓN',
+                'ACTUALIZO': 'MODIFICACIÓN',
+                'MODIFICACION': 'MODIFICACIÓN',
+                'ELIMINAR': 'ELIMINACIÓN',
+                'ELIMINO': 'ELIMINACIÓN',
+                'ELIMINACION': 'ELIMINACIÓN'
+            }
+            df_logs['Acción'] = df_logs['Acción'].astype(str).str.upper().map(lambda x: mapeo_acciones.get(x, x))
             return df_logs[LOG_COLUMNS]
         except Exception:
             return pd.DataFrame(columns=LOG_COLUMNS)
@@ -295,8 +309,16 @@ def registrar_log(accion, codigo_k, material, medio, alm_dest, puesto_dest, usua
     df_actual = cargar_logs()
     if pd.isna(medio) or str(medio).strip() in ["None", "nan", "N/A", ""]:
         medio = "SIN MEDIO DEFINIDO"
+    
+    mapeo_guardado = {
+        'CREO': 'CREACIÓN',
+        'ACTUALIZO': 'MODIFICACIÓN',
+        'ELIMINO': 'ELIMINACIÓN'
+    }
+    accion_norm = mapeo_guardado.get(accion, accion)
+
     nuevo_log = pd.DataFrame([{
-        "Fecha_Hora": now, "Acción": accion, "Código_K": codigo_k,
+        "Fecha_Hora": now, "Acción": accion_norm, "Código_K": codigo_k,
         "Material": material, "Medio": str(medio), "Almacén_Destino": alm_dest,
         "Puesto_Destino": puesto_dest, "Usuario": usuario
     }])
@@ -351,11 +373,11 @@ kpi4.metric("Próximo Código K", proximo_k_val)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# Pestañas Principales (AÑADIDA PESTAÑA DE KPIs)
+# Pestañas Principales
 tabs = st.tabs(["📈 Panel KPIs & Métricas", "➕ Crear Nuevo Kanban", "✏️ Modificar y Eliminar", "📊 Exportar Datos", "📜 Historial Auditoría"])
 
 # ==========================================
-# TAB 0: PANEL DE KPIS & MÉTRICAS (NUEVA)
+# TAB 0: PANEL DE KPIS & MÉTRICAS
 # ==========================================
 with tabs[0]:
     st.subheader("📊 Panel Interactivo de KPIs y Analítica de Kanbans")
@@ -399,9 +421,9 @@ with tabs[0]:
             df_logs_filtrado = df_logs_filtrado[df_logs_filtrado['Usuario'] == f_usr]
 
     # Tarjetas Métricas del Período
-    c_creados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'CREO']) if not df_logs_filtrado.empty else 0
-    c_actualizados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'ACTUALIZO']) if not df_logs_filtrado.empty else 0
-    c_eliminados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'ELIMINO']) if not df_logs_filtrado.empty else 0
+    c_creados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'CREACIÓN']) if not df_logs_filtrado.empty else 0
+    c_actualizados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'MODIFICACIÓN']) if not df_logs_filtrado.empty else 0
+    c_eliminados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'ELIMINACIÓN']) if not df_logs_filtrado.empty else 0
 
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Movimientos en el Período", len(df_logs_filtrado))
@@ -437,7 +459,7 @@ with tabs[0]:
         st.plotly_chart(fig_puestos, use_container_width=True)
 
     with g_col2:
-        st.markdown("##### 📈 Evolución de Movimientos en el Período (Creación / Edición / Baja)")
+        st.markdown("##### 📈 Evolución de Movimientos en el Período")
         if not df_logs_filtrado.empty:
             df_logs_filtrado['Fecha_Dia'] = df_logs_filtrado['Fecha_dt'].dt.strftime('%Y-%m-%d')
             df_evolucion = df_logs_filtrado.groupby(['Fecha_Dia', 'Acción']).size().reset_index(name='Cantidad')
@@ -449,7 +471,11 @@ with tabs[0]:
                 color='Acción',
                 markers=True,
                 template="plotly_dark",
-                color_discrete_map={'CREO': '#10b981', 'ACTUALIZO': '#f59e0b', 'ELIMINO': '#ef4444'}
+                color_discrete_map={
+                    'CREACIÓN': '#10b981',
+                    'MODIFICACIÓN': '#f59e0b',
+                    'ELIMINACIÓN': '#ef4444'
+                }
             )
             fig_evol.update_layout(height=350, margin=dict(l=20, r=20, t=20, b=20), xaxis_title="Fecha", yaxis_title="Operaciones")
             st.plotly_chart(fig_evol, use_container_width=True)
