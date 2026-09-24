@@ -54,7 +54,7 @@ COLUMNS = [
     'Puesto de trabajo destino', 'Cantidad Reposicion', 
     'Unidad Reposicion', 'Cantidad Punto de Pedido', 
     'Tiempo preparación abast. (en días)',
-    'Fecha Modificación', 'Usuario Modificación'
+    'Fecha Modificación', 'Usuario Modificación', 'Medio'
 ]
 
 MAPEO_PUESTOS = {
@@ -180,12 +180,17 @@ def cargar_logs():
 def registrar_log(accion, codigo_k, material, medio, alm_dest, puesto_dest, usuario):
     now = obtener_fecha_hora_arg()
     df_actual = cargar_logs()
+    
+    # Sanitización explícita de Medio para asegurar que nunca se guarde 'None' o nulo
+    if pd.isna(medio) or str(medio).strip() in ["None", "nan", "N/A", ""]:
+        medio = "NO ESPECIFICADO"
+        
     nuevo_log = pd.DataFrame([{
         "Fecha_Hora": now,
         "Acción": accion,
         "Código_K": codigo_k,
         "Material": material,
-        "Medio": medio,
+        "Medio": str(medio),
         "Almacén_Destino": alm_dest,
         "Puesto_Destino": puesto_dest,
         "Usuario": usuario
@@ -281,8 +286,10 @@ with tabs[0]:
         tipo_soporte = st.selectbox("Tipo de Kanban", ["GAVETA", "TARJETA"])
         if tipo_soporte == "GAVETA":
             tamano_medio = st.selectbox("Tamaño Gaveta", OPCIONES_GAVETA)
+            medio_str = f"GAVETA {tamano_medio}"
         else:
             tamano_medio = st.selectbox("Tipo Tarjeta/Contenedor", OPCIONES_SOPORTE_TARJETA)
+            medio_str = tamano_medio
 
     with col2:
         almacen_origen = st.selectbox("Almacén Origen", LISTA_ALMACENES, index=LISTA_ALMACENES.index("L010"))
@@ -324,7 +331,6 @@ with tabs[0]:
         if pkg_sugerido and cant_repo > 0 and (cant_repo % pkg_sugerido != 0):
             st.warning(f"⚠️ Atención: La cantidad ({int(cant_repo)}) debe ser múltiplo de {pkg_sugerido}.")
             
-        # Lógica auto-copia y bloqueo si es GAVETA
         if tipo_soporte == "GAVETA":
             cant_pp = st.number_input(
                 "Cantidad Punto de Pedido (Igual al Lote por ser Gaveta)", 
@@ -381,12 +387,13 @@ with tabs[0]:
                     'Cantidad Punto de Pedido': cant_pp,
                     'Tiempo preparación abast. (en días)': dias_prep,
                     'Fecha Modificación': fecha_actual,
-                    'Usuario Modificación': usuario_actual
+                    'Usuario Modificación': usuario_actual,
+                    'Medio': medio_str
                 }
                 
                 df_kanbans = pd.concat([df_kanbans, pd.DataFrame([nuevo_registro])], ignore_index=True)
                 guardar_datos(df_kanbans)
-                registrar_log("CREO", proximo_k_val, material, tipo_soporte, almacen_destino, puesto_destino, usuario_actual)
+                registrar_log("CREO", proximo_k_val, material, medio_str, almacen_destino, puesto_destino, usuario_actual)
                 st.success(f"✅ ¡Kanban **{proximo_k_val}** creado correctamente por **{usuario_actual}**!")
                 st.rerun()
 
@@ -464,8 +471,10 @@ with tabs[1]:
                     m_tipo_soporte = st.selectbox("Tipo de Kanban", ["GAVETA", "TARJETA"], key="m_soporte")
                     if m_tipo_soporte == "GAVETA":
                         m_tamano_medio = st.selectbox("Tamaño Gaveta", OPCIONES_GAVETA, key="m_tam_gav")
+                        m_medio_str = f"GAVETA {m_tamano_medio}"
                     else:
                         m_tamano_medio = st.selectbox("Tipo Tarjeta/Contenedor", OPCIONES_SOPORTE_TARJETA, key="m_tam_tarj")
+                        m_medio_str = m_tamano_medio
 
                 with m_col2:
                     alm_orig_val = row['Almacén Origen'] if row['Almacén Origen'] in LISTA_ALMACENES else "L010"
@@ -499,7 +508,6 @@ with tabs[1]:
                 with m_col3:
                     m_cant_repo = st.number_input("Cantidad Reposición", min_value=0.0, value=float(row['Cantidad Reposicion'] or 0.0), step=1.0, key="m_cant_repo")
                     
-                    # Lógica auto-copia y bloqueo si es GAVETA en Modificación
                     if m_tipo_soporte == "GAVETA":
                         m_cant_pp = st.number_input(
                             "Cantidad Punto Pedido (Igual al Lote)", 
@@ -552,9 +560,10 @@ with tabs[1]:
                         df_kanbans.loc[idx_target, 'Tiempo preparación abast. (en días)'] = m_dias_prep
                         df_kanbans.loc[idx_target, 'Fecha Modificación'] = fecha_actual
                         df_kanbans.loc[idx_target, 'Usuario Modificación'] = usuario_actual
+                        df_kanbans.loc[idx_target, 'Medio'] = m_medio_str
                         
                         guardar_datos(df_kanbans)
-                        registrar_log("ACTUALIZO", k_seleccionado, busqueda_material, m_tipo_soporte, m_almacen_destino, m_puesto_destino, usuario_actual)
+                        registrar_log("ACTUALIZO", k_seleccionado, busqueda_material, m_medio_str, m_almacen_destino, m_puesto_destino, usuario_actual)
                         st.success(f"✅ ¡Kanban **{k_seleccionado}** actualizado correctamente por **{usuario_actual}**!")
                         st.rerun()
 
@@ -563,25 +572,49 @@ with tabs[1]:
     # ----------------------------------
     with col_del:
         st.subheader("🗑️ Eliminar Kanban")
-        st.warning("Al eliminar un Kanban, su código K se libera y se registra en la auditoría.")
+        st.warning("Al eliminar un Kanban, su código K se libera y se registra en la auditoría con su soporte/medio correspondiente.")
         
         k_a_eliminar = st.selectbox(
             "Seleccione Código K a eliminar:", 
-            options=["-- Seleccionar --"] + list(df_kanbans['N° Etiquetas'].unique()),
+            options=["-- Seleccionar --"] + list(df_kanbans['N° Etiquetas'].dropna().unique()),
             key="del_k_select"
         )
         
         if st.button("🗑️ Eliminar Definitivamente") and k_a_eliminar != "-- Seleccionar --":
             fila_del = df_kanbans[df_kanbans['N° Etiquetas'] == k_a_eliminar].iloc[0]
-            mat_afectado = fila_del['Material']
-            alm_dest_del = fila_del['Almacen Destino']
-            puesto_dest_del = fila_del['Puesto de trabajo destino']
+            mat_afectado = str(fila_del['Material']).strip().upper()
+            alm_dest_del = str(fila_del['Almacen Destino']).strip()
+            puesto_dest_del = str(fila_del['Puesto de trabajo destino']).strip().upper()
+            
+            # 1. Intentar obtener el medio directo de la fila actual activa
+            val_medio_del = fila_del.get('Medio', None)
+            
+            # 2. BÚSQUEDA HISTÓRICA POR RELACIÓN EXACTA (CÓDIGO K + MATERIAL + PUESTO DESTINO)
+            if pd.isna(val_medio_del) or str(val_medio_del).strip() in ["None", "nan", "N/A", ""]:
+                df_l = cargar_logs()
+                if not df_l.empty:
+                    # Filtrar por Cod_K + Material + Puesto Destino y tomar el último registro con Medio válido
+                    logs_relacion = df_l[
+                        (df_l['Código_K'] == k_a_eliminar) & 
+                        (df_l['Material'].astype(str).str.strip().str.upper() == mat_afectado) & 
+                        (df_l['Puesto_Destino'].astype(str).str.strip().str.upper() == puesto_dest_del) & 
+                        (df_l['Medio'].notna()) & 
+                        (~df_l['Medio'].isin(["None", "nan", "N/A", ""]))
+                    ]
+                    if not logs_relacion.empty:
+                        # Ordenar por fecha y tomar la más reciente (última creación/actualización activa)
+                        val_medio_del = logs_relacion.iloc[-1]['Medio']
+            
+            medio_del_str = str(val_medio_del) if (pd.notna(val_medio_del) and str(val_medio_del).strip() not in ["None", "nan", "N/A", ""]) else "NO ESPECIFICADO"
             usuario_actual = st.session_state['usuario_email']
             
+            # Eliminar del DataFrame activo y guardar
             df_kanbans = df_kanbans[df_kanbans['N° Etiquetas'] != k_a_eliminar]
             guardar_datos(df_kanbans)
-            registrar_log("ELIMINO", k_a_eliminar, mat_afectado, "N/A", alm_dest_del, puesto_dest_del, usuario_actual)
-            st.success(f"♻️ Kanban **{k_a_eliminar}** eliminado con éxito.")
+            
+            # Registrar en auditoría con el medio recuperado
+            registrar_log("ELIMINO", k_a_eliminar, mat_afectado, medio_del_str, alm_dest_del, puesto_dest_del, usuario_actual)
+            st.success(f"♻️ Kanban **{k_a_eliminar}** ({medio_del_str}) para el material **{mat_afectado}** en **{puesto_dest_del}** eliminado con éxito.")
             st.rerun()
 
 # ==========================================
@@ -624,7 +657,6 @@ with tabs[3]:
     df_logs = cargar_logs()
     
     if not df_logs.empty:
-        # Convertimos la columna Fecha_Hora a datetime para poder filtrar por fechas
         df_logs['Fecha_dt'] = pd.to_datetime(df_logs['Fecha_Hora'], errors='coerce')
         
         f_col1, f_col2, f_col3 = st.columns(3)
@@ -649,7 +681,6 @@ with tabs[3]:
             acciones_list = ["Todas", "CREO", "ACTUALIZO", "ELIMINO"]
             acc_sel = st.selectbox("⚡ Filtrar por Acción:", acciones_list)
 
-        # Aplicación de filtros
         df_logs_filtrado = df_logs.copy()
         
         if isinstance(rango_fechas, tuple) and len(rango_fechas) == 2:
@@ -665,7 +696,6 @@ with tabs[3]:
         if acc_sel != "Todas":
             df_logs_filtrado = df_logs_filtrado[df_logs_filtrado['Acción'] == acc_sel]
 
-        # Eliminamos la columna auxiliar de datetime antes de mostrar/descargar
         df_logs_mostrar = df_logs_filtrado.drop(columns=['Fecha_dt']).sort_values(by="Fecha_Hora", ascending=False)
 
         st.dataframe(df_logs_mostrar, use_container_width=True)
