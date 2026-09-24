@@ -4,8 +4,15 @@ import re
 import os
 import json
 from datetime import datetime
+import pytz
 
 st.set_page_config(page_title="Gestor de Kanbans - Crucianelli", layout="wide")
+
+# Configuración de Zona Horaria Argentina
+ARG_TZ = pytz.timezone('America/Argentina/Buenos_Aires')
+
+def obtener_fecha_hora_arg():
+    return datetime.now(ARG_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
 DB_FILE = "TablaZ.xlsx"
 PKG_FILE = "Lote packaging.xlsx"
@@ -14,10 +21,9 @@ USERS_FILE = "usuarios.json"
 SHEET_NAME = "Kanbans CRUCIANELLI"
 
 # ==========================================
-# GESTIÓN DE USUARIOS PERSISTENTES (JSON)
+# GESTIÓN DE USUARIOS PERSISTENTES
 # ==========================================
 def cargar_usuarios():
-    # Carga predeterminada inicial
     usuarios_default = {
         "jairc@crucianelli.com": "procesojair"
     }
@@ -28,7 +34,6 @@ def cargar_usuarios():
         except Exception:
             return usuarios_default
     else:
-        # Si no existe el archivo, lo creamos con el usuario inicial
         guardar_usuarios(usuarios_default)
         return usuarios_default
 
@@ -92,7 +97,6 @@ if not st.session_state['usuario_email']:
     with col_auth:
         tab_login, tab_register = st.tabs(["🔐 Iniciar Sesión", "📝 Registrarse"])
         
-        # --- LOGIN ---
         with tab_login:
             email_input = st.text_input("Correo electrónico (@crucianelli.com):", key="log_email").strip().lower()
             password_input = st.text_input("Contraseña:", type="password", key="log_pass")
@@ -109,7 +113,6 @@ if not st.session_state['usuario_email']:
                 else:
                     st.error("❌ Credenciales incorrectas o usuario no registrado.")
 
-        # --- REGISTRO LIBRE PARA EMPLEADOS ---
         with tab_register:
             reg_email = st.text_input("Correo corporativo (@crucianelli.com):", key="reg_email").strip().lower()
             reg_pass1 = st.text_input("Cree su contraseña:", type="password", key="reg_pass1")
@@ -131,7 +134,7 @@ if not st.session_state['usuario_email']:
     st.stop()
 
 # ==========================================
-# FUNCIONES DE BASE DE DATOS
+# FUNCIONES DE BASE DE DATOS Y AUDITORÍA
 # ==========================================
 def cargar_datos():
     if os.path.exists(DB_FILE):
@@ -157,13 +160,16 @@ def guardar_datos(df):
     with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:
         df.to_excel(writer, sheet_name=SHEET_NAME, index=False)
 
-def registrar_log(accion, codigo_k, material, usuario):
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+def registrar_log(accion, codigo_k, material, medio, alm_dest, puesto_dest, usuario):
+    now = obtener_fecha_hora_arg()
     nuevo_log = pd.DataFrame([{
         "Fecha_Hora": now,
         "Acción": accion,
         "Código_K": codigo_k,
         "Material": material,
+        "Medio": medio,
+        "Almacén_Destino": alm_dest,
+        "Puesto_Destino": puesto_dest,
         "Usuario": usuario
     }])
     if os.path.exists(LOG_FILE):
@@ -213,7 +219,6 @@ internos_k = len(df_kanbans[df_kanbans['Tipo Etiqueta'] == 'KI'])
 externos_k = len(df_kanbans[df_kanbans['Tipo Etiqueta'] == 'KE'])
 proximo_k_val = obtener_siguiente_codigo_k(df_kanbans)
 
-# Formateo limpio para la métrica de Última Modificación (evita cortes de pantalla)
 val_fecha_str = "-"
 val_detalle_str = "Sin registros"
 
@@ -234,7 +239,7 @@ kpi3.metric("Externos (KE)", externos_k)
 kpi4.metric("Próximo Código K", proximo_k_val)
 
 with kpi5:
-    st.caption("Última Modificación")
+    st.caption("Última Modificación (UTC-3)")
     st.markdown(f"**{val_fecha_str}**")
     st.caption(val_detalle_str)
 
@@ -314,10 +319,22 @@ with tabs[0]:
         if puesto_origen:
             puesto_origen = MAPEO_PUESTOS.get(puesto_origen, puesto_origen)
 
+        # Validación de Punto de Pedido según tipo de medio
+        es_valido_pp = True
+        msg_err_pp = ""
+        if tipo_soporte == "GAVETA" and cant_pp != cant_repo:
+            es_valido_pp = False
+            msg_err_pp = f"❌ Regla de GAVETA: El Punto de Pedido ({cant_pp}) debe ser EXACTAMENTE IGUAL al Lote de Reposición ({cant_repo})."
+        elif tipo_soporte == "TARJETA" and cant_pp >= cant_repo:
+            es_valido_pp = False
+            msg_err_pp = f"❌ Regla de TARJETA: El Punto de Pedido ({cant_pp}) debe ser MENOR al Lote de Reposición ({cant_repo})."
+
         if not material or not puesto_destino:
             st.error("❌ El Código de Material y el Puesto Destino son obligatorios.")
         elif not re.match(r'^[A-Z]{2,3}\d{6}$', material):
             st.error("❌ Formato de Material inválido. Debe tener 2 o 3 letras seguidas de 6 números (ej. PB005075).")
+        elif not es_valido_pp:
+            st.error(msg_err_pp)
         elif pkg_sugerido and (cant_repo == 0 or cant_repo % pkg_sugerido != 0):
             st.error(f"❌ REGLA DE PACKAGING: La Cantidad de Reposición ({int(cant_repo)}) debe ser un múltiplo exacto de {pkg_sugerido} unidades para este material.")
         else:
@@ -329,7 +346,7 @@ with tabs[0]:
             if not duplicados.empty:
                 st.error(f"⚠️ Ya existe un Kanban activo ({duplicados.iloc[0]['N° Etiquetas']}) para el Material '{material}' en el Puesto '{puesto_destino}'.")
             else:
-                fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                fecha_actual = obtener_fecha_hora_arg()
                 usuario_actual = st.session_state['usuario_email']
                 
                 nuevo_registro = {
@@ -351,7 +368,7 @@ with tabs[0]:
                 
                 df_kanbans = pd.concat([df_kanbans, pd.DataFrame([nuevo_registro])], ignore_index=True)
                 guardar_datos(df_kanbans)
-                registrar_log("CREAR", proximo_k_val, material, usuario_actual)
+                registrar_log("CREO", proximo_k_val, material, tipo_soporte, almacen_destino, puesto_destino, usuario_actual)
                 st.success(f"✅ ¡Kanban **{proximo_k_val}** creado correctamente por **{usuario_actual}**!")
                 st.rerun()
 
@@ -477,12 +494,23 @@ with tabs[1]:
                     if m_puesto_origen:
                         m_puesto_origen = MAPEO_PUESTOS.get(m_puesto_origen, m_puesto_origen)
 
+                    es_valido_pp_mod = True
+                    msg_err_pp_mod = ""
+                    if m_tipo_soporte == "GAVETA" and m_cant_pp != m_cant_repo:
+                        es_valido_pp_mod = False
+                        msg_err_pp_mod = f"❌ Regla de GAVETA: El Punto de Pedido ({m_cant_pp}) debe ser EXACTAMENTE IGUAL al Lote de Reposición ({m_cant_repo})."
+                    elif m_tipo_soporte == "TARJETA" and m_cant_pp >= m_cant_repo:
+                        es_valido_pp_mod = False
+                        msg_err_pp_mod = f"❌ Regla de TARJETA: El Punto de Pedido ({m_cant_pp}) debe ser MENOR al Lote de Reposición ({m_cant_repo})."
+
                     if not m_puesto_destino:
                         st.error("❌ El Puesto Destino es obligatorio.")
+                    elif not es_valido_pp_mod:
+                        st.error(msg_err_pp_mod)
                     elif pkg_sugerido_mod and (m_cant_repo == 0 or m_cant_repo % pkg_sugerido_mod != 0):
                         st.error(f"❌ REGLA DE PACKAGING: La Cantidad ({int(m_cant_repo)}) debe ser múltiplo exacto de {pkg_sugerido_mod}.")
                     else:
-                        fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        fecha_actual = obtener_fecha_hora_arg()
                         usuario_actual = st.session_state['usuario_email']
                         
                         idx_target = df_kanbans[df_kanbans['N° Etiquetas'] == k_seleccionado].index[0]
@@ -501,7 +529,7 @@ with tabs[1]:
                         df_kanbans.loc[idx_target, 'Usuario Modificación'] = usuario_actual
                         
                         guardar_datos(df_kanbans)
-                        registrar_log("MODIFICAR", k_seleccionado, busqueda_material, usuario_actual)
+                        registrar_log("ACTUALIZO", k_seleccionado, busqueda_material, m_tipo_soporte, m_almacen_destino, m_puesto_destino, usuario_actual)
                         st.success(f"✅ ¡Kanban **{k_seleccionado}** actualizado correctamente por **{usuario_actual}**!")
                         st.rerun()
 
@@ -519,12 +547,15 @@ with tabs[1]:
         )
         
         if st.button("🗑️ Eliminar Definitivamente") and k_a_eliminar != "-- Seleccionar --":
-            mat_afectado = df_kanbans[df_kanbans['N° Etiquetas'] == k_a_eliminar]['Material'].values[0]
+            fila_del = df_kanbans[df_kanbans['N° Etiquetas'] == k_a_eliminar].iloc[0]
+            mat_afectado = fila_del['Material']
+            alm_dest_del = fila_del['Almacen Destino']
+            puesto_dest_del = fila_del['Puesto de trabajo destino']
             usuario_actual = st.session_state['usuario_email']
             
             df_kanbans = df_kanbans[df_kanbans['N° Etiquetas'] != k_a_eliminar]
             guardar_datos(df_kanbans)
-            registrar_log("ELIMINAR", k_a_eliminar, mat_afectado, usuario_actual)
+            registrar_log("ELIMINO", k_a_eliminar, mat_afectado, "N/A", alm_dest_del, puesto_dest_del, usuario_actual)
             st.success(f"♻️ Kanban **{k_a_eliminar}** eliminado con éxito.")
             st.rerun()
 
@@ -563,24 +594,65 @@ with tabs[2]:
 # TAB 4: AUDITORÍA DE CAMBIOS
 # ==========================================
 with tabs[3]:
-    st.subheader("Historial Completo de Operaciones por Usuario")
+    st.subheader("📜 Historial Completo y Filtrado de Modificaciones")
+    
     if os.path.exists(LOG_FILE):
         df_logs = pd.read_csv(LOG_FILE)
         
-        usuarios_list = ["Todos"] + list(df_logs['Usuario'].unique())
-        usr_sel = st.selectbox("Filtrar auditoría por usuario:", usuarios_list)
+        # Convertimos la columna Fecha_Hora a datetime para poder filtrar por fechas
+        df_logs['Fecha_dt'] = pd.to_datetime(df_logs['Fecha_Hora'], errors='coerce')
         
-        if usr_sel != "Todos":
-            df_logs = df_logs[df_logs['Usuario'] == usr_sel]
+        f_col1, f_col2, f_col3 = st.columns(3)
+        
+        min_date = df_logs['Fecha_dt'].min().date() if not df_logs['Fecha_dt'].isna().all() else datetime.now().date()
+        max_date = df_logs['Fecha_dt'].max().date() if not df_logs['Fecha_dt'].isna().all() else datetime.now().date()
+        
+        with f_col1:
+            rango_fechas = st.date_input(
+                "📅 Seleccione Rango de Fechas:",
+                value=(min_date, max_date),
+                min_value=min_date,
+                max_value=max_date
+            )
+        
+        with f_col2:
+            usuarios_list = ["Todos"] + list(df_logs['Usuario'].dropna().unique())
+            usr_sel = st.selectbox("👤 Filtrar por Usuario:", usuarios_list)
             
-        st.dataframe(df_logs.sort_values(by="Fecha_Hora", ascending=False), use_container_width=True)
+        with f_col3:
+            acciones_list = ["Todas", "CREO", "ACTUALIZO", "ELIMINO"]
+            acc_sel = st.selectbox("⚡ Filtrar por Acción:", acciones_list)
+
+        # Aplicación de filtros
+        df_logs_filtrado = df_logs.copy()
         
-        csv_logs = df_logs.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Descargar Reporte de Auditoría (CSV)",
-            data=csv_logs,
-            file_name="Auditoria_Kanbans.csv",
-            mime="text/csv"
-        )
+        if isinstance(rango_fechas, tuple) and len(rango_fechas) == 2:
+            f_inicio, f_fin = rango_fechas
+            df_logs_filtrado = df_logs_filtrado[
+                (df_logs_filtrado['Fecha_dt'].dt.date >= f_inicio) & 
+                (df_logs_filtrado['Fecha_dt'].dt.date <= f_fin)
+            ]
+            
+        if usr_sel != "Todos":
+            df_logs_filtrado = df_logs_filtrado[df_logs_filtrado['Usuario'] == usr_sel]
+            
+        if acc_sel != "Todas":
+            df_logs_filtrado = df_logs_filtrado[df_logs_filtrado['Acción'] == acc_sel]
+
+        # Eliminamos la columna auxiliar de datetime antes de mostrar/descargar
+        df_logs_mostrar = df_logs_filtrado.drop(columns=['Fecha_dt']).sort_values(by="Fecha_Hora", ascending=False)
+
+        st.dataframe(df_logs_mostrar, use_container_width=True)
+        
+        col_down_log, _ = st.columns([1, 2])
+        with col_down_log:
+            csv_logs = df_logs_mostrar.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Descargar Reporte Filtrado (CSV)",
+                data=csv_logs,
+                file_name=f"Auditoria_Kanbans_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                type="primary"
+            )
     else:
-        st.info("Aún no hay registros de cambios.")
+        st.info("Aún no hay registros de cambios en el sistema.")
