@@ -103,18 +103,15 @@ LOG_COLUMNS = ["Fecha_Hora", "Acción", "Código_K", "Material", "Medio", "Almac
 TRACKER_COLUMNS = ["ID_Solicitud", "Fecha_Solicitud", "Material", "Código_K", "Tipo_KB", "Puesto_Destino", "Medio", "Cambio", "Acción_Requerida", "Cargado_SAP", "Impreso", "Fecha_Impresion", "Estado_Fisico", "Fecha_Finalizacion", "Observación", "Usuario_Procesos"]
 
 ROLES_PREDEFINIDOS = {
-    # 🛠️ Ing. de Procesos
     "jairc@crucianelli.com": "Procesos", "mmagarello@crucianelli.com": "Procesos",
     "mcabral@crucianelli.com": "Procesos", "gtuninetti@crucianelli.com": "Procesos",
     "produccion@crucianelli.com": "Procesos", "abacelli@crucianelli.com": "Procesos",
     "tabrate@crucianelli.com": "Procesos", "llatanzi@crucianelli.com": "Procesos",
     
-    # 🚛 Logística (SAP / Impresión)
     "mlopez@crucianelli.com": "Logistica", "recepcion3@crucianelli.com": "Logistica",
     "gpereyra@crucianelli.com": "Logistica", "jporta@crucianelli.com": "Logistica",
     "spetetta@crucianelli.com": "Logistica",
     
-    # 👁️ Consulta / Planta
     "fany@crucianelli.com": "Consulta", "strillini@crucianelli.com": "Consulta",
     "apicotto@crucianelli.com": "Consulta", "fsolis@crucianelli.com": "Consulta",
     "isola@crucianelli.com": "Consulta", "bfrutos@crucianelli.com": "Consulta",
@@ -191,9 +188,6 @@ if 'usuario_email' not in st.session_state:
 if 'usuario_rol' not in st.session_state:
     st.session_state['usuario_rol'] = None
 
-# ==========================================
-# PANTALLA DE AUTENTICACIÓN / REGISTRO
-# ==========================================
 if not st.session_state['usuario_email']:
     st.title("📦 Sistema de Gestión de Kanbans - Crucianelli")
     col_auth, _ = st.columns([1.5, 2])
@@ -238,15 +232,17 @@ if not st.session_state['usuario_email']:
                     st.success(f"✅ ¡Cuenta creada exitosamente para {reg_email}! (Rol asignado: {rol_asignado}). Ya puede iniciar sesión.")
     st.stop()
 
-# ==========================================
-# FUNCIONES DATA / LOGS / TRACKER
-# ==========================================
 def cargar_datos():
     if os.path.exists(DB_FILE):
         df = pd.read_excel(DB_FILE, sheet_name=SHEET_NAME)
         for col in COLUMNS:
             if col not in df.columns:
                 df[col] = None
+        
+        # Asegurar formato limpio en texto para búsquedas
+        df['Material'] = df['Material'].astype(str).str.strip().str.upper()
+        df['N° Etiquetas'] = df['N° Etiquetas'].astype(str).str.strip().str.upper()
+
         def determinar_tipo_kanban(row):
             cant_repo = row.get('Cantidad Reposicion')
             cant_pp = row.get('Cantidad Punto de Pedido')
@@ -316,7 +312,6 @@ def cargar_tracker():
             for col in TRACKER_COLUMNS:
                 if col not in df_tr.columns:
                     df_tr[col] = "-"
-            # Asegurar que todas las columnas sean tratadas como string para evitar errores de tipo
             df_tr = df_tr.fillna("-").astype(str)
             return df_tr[TRACKER_COLUMNS]
         except Exception:
@@ -334,20 +329,20 @@ def crear_solicitud_tracker(material, codigo_k, tipo_kb, puesto_dest, medio, cam
     nueva_fila = pd.DataFrame([{
         "ID_Solicitud": id_sol,
         "Fecha_Solicitud": now_date,
-        "Material": material,
-        "Código_K": codigo_k,
-        "Tipo_KB": tipo_kb,
-        "Puesto_Destino": puesto_dest,
-        "Medio": medio,
-        "Cambio": cambio,
-        "Acción_Requerida": accion_req,
+        "Material": str(material),
+        "Código_K": str(codigo_k),
+        "Tipo_KB": str(tipo_kb),
+        "Puesto_Destino": str(puesto_dest),
+        "Medio": str(medio),
+        "Cambio": str(cambio),
+        "Acción_Requerida": str(accion_req),
         "Cargado_SAP": "NO",
         "Impreso": "NO",
         "Fecha_Impresion": "-",
         "Estado_Fisico": "Pendiente",
         "Fecha_Finalizacion": "-",
-        "Observación": "",
-        "Usuario_Procesos": usuario
+        "Observación": "-",
+        "Usuario_Procesos": str(usuario)
     }])
     df_final = pd.concat([df_tr, nueva_fila], ignore_index=True)
     guardar_tracker(df_final)
@@ -522,27 +517,31 @@ if tab_tracker:
                         st.caption(f"**Material:** {row_tr['Material']} | **Código K:** {row_tr['Código_K']} | **Acción:** {row_tr['Acción_Requerida']}")
 
                     with col_tr2:
-                        chk_sap = st.checkbox("Cargado en SAP", value=(row_tr['Cargado_SAP'] == 'SI'))
-                        chk_imp = st.checkbox("Impreso", value=(row_tr['Impreso'] == 'SI'))
+                        chk_sap = st.checkbox("Cargado en SAP", value=(str(row_tr['Cargado_SAP']) == 'SI'))
+                        chk_imp = st.checkbox("Impreso", value=(str(row_tr['Impreso']) == 'SI'))
                         
                     with col_tr3:
-                        est_fisico = st.selectbox("Estado Físico en Puesto:", ["Pendiente", "En Proceso", "Entregado"], index=["Pendiente", "En Proceso", "Entregado"].index(str(row_tr['Estado_Fisico'])))
-                        obs_tr = st.text_input("Observaciones:", value=str(row_tr['Observación'] or ''))
+                        curr_est = str(row_tr['Estado_Fisico'])
+                        idx_est = ["Pendiente", "En Proceso", "Entregado"].index(curr_est) if curr_est in ["Pendiente", "En Proceso", "Entregado"] else 0
+                        est_fisico = st.selectbox("Estado Físico en Puesto:", ["Pendiente", "En Proceso", "Entregado"], index=idx_est)
+                        obs_tr = st.text_input("Observaciones:", value=str(row_tr['Observación'] if row_tr['Observación'] != '-' else ''))
 
                     if st.button("💾 Actualizar Estado de Solicitud", type="primary"):
                         idx_tr = df_tr[df_tr['ID_Solicitud'] == sol_sel].index[0]
                         now_str = datetime.now(ARG_TZ).strftime("%Y-%m-%d")
                         
+                        df_tr = df_tr.astype(object)
+                        
                         df_tr.loc[idx_tr, 'Cargado_SAP'] = "SI" if chk_sap else "NO"
                         df_tr.loc[idx_tr, 'Impreso'] = "SI" if chk_imp else "NO"
-                        if chk_imp and df_tr.loc[idx_tr, 'Fecha_Impresion'] == "-":
+                        if chk_imp and str(df_tr.loc[idx_tr, 'Fecha_Impresion']) in ["-", "None", "nan", ""]:
                             df_tr.loc[idx_tr, 'Fecha_Impresion'] = now_str
                             
-                        df_tr.loc[idx_tr, 'Estado_Fisico'] = est_fisico
-                        if est_fisico == "Entregado" and df_tr.loc[idx_tr, 'Fecha_Finalizacion'] == "-":
+                        df_tr.loc[idx_tr, 'Estado_Fisico'] = str(est_fisico)
+                        if est_fisico == "Entregado" and str(df_tr.loc[idx_tr, 'Fecha_Finalizacion']) in ["-", "None", "nan", ""]:
                             df_tr.loc[idx_tr, 'Fecha_Finalizacion'] = now_str
                             
-                        df_tr.loc[idx_tr, 'Observación'] = obs_tr
+                        df_tr.loc[idx_tr, 'Observación'] = str(obs_tr) if obs_tr.strip() else "-"
                         guardar_tracker(df_tr)
                         st.success(f"✅ Solicitud **{sol_sel}** actualizada con éxito.")
                         st.rerun()
@@ -596,8 +595,6 @@ if tab_crear:
                 df_kanbans = pd.concat([df_kanbans, pd.DataFrame([nuevo_reg])], ignore_index=True)
                 guardar_datos(df_kanbans)
                 registrar_log("CREO", proximo_k_val, material, medio_str, almacen_destino, puesto_destino, usr_act)
-                
-                # PARAMETRIZACIÓN ACCIÓN EN CREACIÓN
                 crear_solicitud_tracker(material, proximo_k_val, tipo_etiqueta_sap, puesto_destino, medio_str, "CÓDIGO NUEVO", "ARMAR PEDIDO", usr_act)
                 st.success(f"✅ ¡Kanban **{proximo_k_val}** creado! Enviado a Logística con acción: **ARMAR PEDIDO**.")
                 st.rerun()
@@ -613,14 +610,35 @@ if tab_mod:
         
         m_col_left, m_col_right = st.columns([2, 1])
         
-        # --- SECCIÓN MODIFICACIÓN ---
+        # --- SECCIÓN BÚSQUEDA Y MODIFICACIÓN ---
         with m_col_left:
-            busqueda_material = st.text_input("Ingrese Código de Material a Buscar:", key="search_mod").upper().strip()
-            if busqueda_material:
-                kanbans_encontrados = df_kanbans[df_kanbans['Material'] == busqueda_material]
+            busqueda = st.text_input("Ingrese Código de Material a Buscar (ej: CM000044):", key="search_mod").upper().strip()
+            
+            if busqueda:
+                # Recargar siempre datos frescos
+                df_kanbans_fresh = cargar_datos()
+                
+                # Búsqueda directa por Material o por Código K
+                kanbans_encontrados = df_kanbans_fresh[
+                    (df_kanbans_fresh['Material'].astype(str).str.strip().str.upper() == busqueda) |
+                    (df_kanbans_fresh['Material'].astype(str).str.contains(busqueda, na=False, regex=False)) |
+                    (df_kanbans_fresh['N° Etiquetas'].astype(str).str.strip().str.upper() == busqueda)
+                ]
+                
                 if not kanbans_encontrados.empty:
-                    k_sel = st.selectbox("Seleccione el Código K:", kanbans_encontrados['N° Etiquetas'].tolist())
+                    # Crear una lista de opciones clara: "K00000001 (Puesto: CARGAFIN)"
+                    opciones_k = [
+                        f"{r['N° Etiquetas']} | Puesto: {r['Puesto de trabajo destino']}" 
+                        for _, r in kanbans_encontrados.iterrows()
+                    ]
+                    
+                    sel_k_fmt = st.selectbox("Seleccione el Código K a modificar:", opciones_k)
+                    # Extraer el código K puro de la opción seleccionada
+                    k_sel = sel_k_fmt.split(" | ")[0].strip()
+                    
                     row = kanbans_encontrados[kanbans_encontrados['N° Etiquetas'] == k_sel].iloc[0]
+                    
+                    st.caption(f"📌 Editando **{k_sel}** - Material: **{row['Material']}**")
                     
                     m_col1, m_col2, m_col3 = st.columns(3)
                     with m_col1:
@@ -648,19 +666,27 @@ if tab_mod:
                         df_kanbans.loc[idx, 'Fecha Modificación'] = obtener_fecha_hora_arg()
                         df_kanbans.loc[idx, 'Usuario Modificación'] = usr_act
                         
+                        mat_mod = str(df_kanbans.loc[idx, 'Material'])
                         guardar_datos(df_kanbans)
-                        registrar_log("ACTUALIZO", k_sel, busqueda_material, m_medio_str, m_almacen_destino, m_puesto_destino, usr_act)
-                        
-                        # PARAMETRIZACIÓN ACCIÓN EN MODIFICACIÓN
-                        crear_solicitud_tracker(busqueda_material, k_sel, df_kanbans.loc[idx, 'Tipo Etiqueta'], m_puesto_destino, m_medio_str, "ACTUALIZACIÓN", "IMPRIMIR / REEMPLAZAR", usr_act)
+                        registrar_log("ACTUALIZO", k_sel, mat_mod, m_medio_str, m_almacen_destino, m_puesto_destino, usr_act)
+                        crear_solicitud_tracker(mat_mod, k_sel, df_kanbans.loc[idx, 'Tipo Etiqueta'], m_puesto_destino, m_medio_str, "ACTUALIZACIÓN", "IMPRIMIR / REEMPLAZAR", usr_act)
                         st.success(f"✅ Kanban **{k_sel}** actualizado! Acción enviada a Logística: **IMPRIMIR / REEMPLAZAR**.")
                         st.rerun()
+                else:
+                    st.warning(f"⚠️ No se encontraron Kanbans registrados para el material o código: **{busqueda}**")
 
         # --- SECCIÓN ELIMINACIÓN ---
         with m_col_right:
             st.markdown("#### 🗑️ Dar de Baja Kanban")
-            k_del_sel = st.selectbox("Seleccionar Código K a eliminar:", ["-- Seleccionar --"] + list(df_kanbans['N° Etiquetas'].dropna().unique()), key="k_del_select")
-            if st.button("🗑️ Eliminar y Solicitar Retiro", use_container_width=True) and k_del_sel != "-- Seleccionar --":
+            opciones_del_k = [
+                f"{r['N° Etiquetas']} | Mat: {r['Material']} | Puesto: {r['Puesto de trabajo destino']}"
+                for _, r in df_kanbans.iterrows()
+            ]
+            
+            k_del_fmt = st.selectbox("Seleccionar Código K a eliminar:", ["-- Seleccionar --"] + opciones_del_k, key="k_del_select")
+            
+            if st.button("🗑️ Eliminar y Solicitar Retiro", use_container_width=True) and k_del_fmt != "-- Seleccionar --":
+                k_del_sel = k_del_fmt.split(" | ")[0].strip()
                 row_del = df_kanbans[df_kanbans['N° Etiquetas'] == k_del_sel].iloc[0]
                 mat_del = str(row_del['Material'])
                 puesto_del = str(row_del['Puesto de trabajo destino'])
@@ -668,13 +694,10 @@ if tab_mod:
                 tipo_del = str(row_del['Tipo Etiqueta'])
                 usr_act = st.session_state['usuario_email']
                 
-                # Borrar de la base activa
                 df_kanbans = df_kanbans[df_kanbans['N° Etiquetas'] != k_del_sel]
                 guardar_datos(df_kanbans)
                 
                 registrar_log("ELIMINO", k_del_sel, mat_del, medio_del, str(row_del['Almacen Destino']), puesto_del, usr_act)
-                
-                # PARAMETRIZACIÓN ACCIÓN EN ELIMINACIÓN
                 crear_solicitud_tracker(mat_del, k_del_sel, tipo_del, puesto_del, medio_del, "BAJA / ELIMINACIÓN", "RETIRAR KB", usr_act)
                 st.success(f"♻️ Kanban **{k_del_sel}** dado de baja. Solicitud enviada a Logística: **RETIRAR KB**.")
                 st.rerun()
