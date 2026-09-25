@@ -102,9 +102,7 @@ SHEET_NAME = "Kanbans CRUCIANELLI"
 LOG_COLUMNS = ["Fecha_Hora", "Acción", "Código_K", "Material", "Medio", "Almacén_Destino", "Puesto_Destino", "Usuario"]
 TRACKER_COLUMNS = ["ID_Solicitud", "Fecha_Solicitud", "Material", "Código_K", "Tipo_KB", "Puesto_Destino", "Medio", "Cambio", "Acción_Requerida", "Cargado_SAP", "Impreso", "Fecha_Impresion", "Estado_Fisico", "Fecha_Finalizacion", "Observación", "Usuario_Procesos"]
 
-# ==========================================
-# BASE DE ROLES Y USUARIOS AUTENTICADOS
-# ==========================================
+# Matriz de roles según Excel
 ROLES_PREDEFINIDOS = {
     # 🛠️ Ing. de Procesos
     "jairc@crucianelli.com": "Procesos", "mmagarello@crucianelli.com": "Procesos",
@@ -126,23 +124,29 @@ ROLES_PREDEFINIDOS = {
     "psantilli@crucianelli.com": "Consulta", "activacion@crucianelli.com": "Consulta"
 }
 
-def cargar_usuarios():
-    if os.path.exists(USERS_FILE):
-        try:
-            with open(USERS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    # Generar usuarios base con password por defecto
-    dict_users = {}
-    for email, rol in ROLES_PREDEFINIDOS.items():
-        dict_users[email] = {"pass": "crucianelli123", "rol": rol}
-    guardar_usuarios(dict_users)
-    return dict_users
-
 def guardar_usuarios(usuarios_dict):
     with open(USERS_FILE, "w", encoding="utf-8") as f:
         json.dump(usuarios_dict, f, indent=4)
+
+def cargar_usuarios():
+    dict_users = {}
+    if os.path.exists(USERS_FILE):
+        try:
+            with open(USERS_FILE, "r", encoding="utf-8") as f:
+                data_guardada = json.load(f)
+                
+            for email, val in data_guardada.items():
+                rol_asig = ROLES_PREDEFINIDOS.get(email, "Consulta")
+                if isinstance(val, str):
+                    dict_users[email] = {"pass": val, "rol": rol_asig}
+                elif isinstance(val, dict):
+                    dict_users[email] = {
+                        "pass": val.get("pass", ""),
+                        "rol": val.get("rol", rol_asig)
+                    }
+        except Exception:
+            pass
+    return dict_users
 
 USUARIOS_REGISTRADOS = cargar_usuarios()
 
@@ -189,28 +193,53 @@ if 'usuario_rol' not in st.session_state:
     st.session_state['usuario_rol'] = None
 
 # ==========================================
-# LOGIN CON ASIGNACIÓN DE ROLES
+# PANTALLA DE AUTENTICACIÓN / REGISTRO
 # ==========================================
 if not st.session_state['usuario_email']:
     st.title("📦 Sistema de Gestión de Kanbans - Crucianelli")
     col_auth, _ = st.columns([1.5, 2])
     with col_auth:
-        st.subheader("🔐 Iniciar Sesión")
-        email_input = st.text_input("Correo electrónico (@crucianelli.com):", key="log_email").strip().lower()
-        password_input = st.text_input("Contraseña:", type="password", key="log_pass")
+        tab_login, tab_register = st.tabs(["🔐 Iniciar Sesión", "📝 Registrarse"])
         
-        if st.button("Ingresar", type="primary", use_container_width=True):
-            if not email_input or not password_input:
-                st.error("❌ Complete correo y contraseña.")
-            elif not email_input.endswith("@crucianelli.com"):
-                st.error("❌ El correo debe ser del dominio @crucianelli.com.")
-            elif email_input in USUARIOS_REGISTRADOS and USUARIOS_REGISTRADOS[email_input]["pass"] == password_input:
-                st.session_state['usuario_email'] = email_input
-                st.session_state['usuario_rol'] = USUARIOS_REGISTRADOS[email_input]["rol"]
-                st.success(f"Bienvenido/a {email_input}")
-                st.rerun()
-            else:
-                st.error("❌ Credenciales incorrectas.")
+        # --- TAB LOGIN ---
+        with tab_login:
+            email_input = st.text_input("Correo electrónico (@crucianelli.com):", key="log_email").strip().lower()
+            password_input = st.text_input("Contraseña:", type="password", key="log_pass")
+            
+            if st.button("Ingresar", type="primary", use_container_width=True):
+                if not email_input or not password_input:
+                    st.error("❌ Complete correo y contraseña.")
+                elif not email_input.endswith("@crucianelli.com"):
+                    st.error("❌ El correo debe ser del dominio @crucianelli.com.")
+                elif email_input in USUARIOS_REGISTRADOS and USUARIOS_REGISTRADOS[email_input]["pass"] == password_input:
+                    st.session_state['usuario_email'] = email_input
+                    st.session_state['usuario_rol'] = USUARIOS_REGISTRADOS[email_input]["rol"]
+                    st.success(f"Bienvenido/a {email_input}")
+                    st.rerun()
+                else:
+                    st.error("❌ Credenciales incorrectas o usuario no registrado. Registrese en la pestaña adyacente.")
+
+        # --- TAB REGISTRO LIBRE ---
+        with tab_register:
+            reg_email = st.text_input("Correo corporativo (@crucianelli.com):", key="reg_email").strip().lower()
+            reg_pass1 = st.text_input("Cree su contraseña:", type="password", key="reg_pass1")
+            reg_pass2 = st.text_input("Confirme su contraseña:", type="password", key="reg_pass2")
+            
+            if st.button("Crear Cuenta", use_container_width=True):
+                if not reg_email or not reg_pass1 or not reg_pass2:
+                    st.error("❌ Complete todos los campos.")
+                elif not reg_email.endswith("@crucianelli.com"):
+                    st.error("❌ El correo debe ser obligatoriamente @crucianelli.com.")
+                elif reg_pass1 != reg_pass2:
+                    st.error("❌ Las contraseñas no coinciden.")
+                elif reg_email in USUARIOS_REGISTRADOS:
+                    st.warning("⚠️ Este usuario ya se encuentra registrado. Inicie sesión directamente.")
+                else:
+                    # Asignar rol predefinido o 'Consulta'
+                    rol_asignado = ROLES_PREDEFINIDOS.get(reg_email, "Consulta")
+                    USUARIOS_REGISTRADOS[reg_email] = {"pass": reg_pass1, "rol": rol_asignado}
+                    guardar_usuarios(USUARIOS_REGISTRADOS)
+                    st.success(f"✅ ¡Cuenta creada exitosamente para {reg_email}! (Rol asignado: {rol_asignado}). Ya puede iniciar sesión.")
     st.stop()
 
 # ==========================================
@@ -367,7 +396,6 @@ with col_logout:
         st.session_state['usuario_rol'] = None
         st.rerun()
 
-# Métricas Principales Superior
 total_k = len(df_kanbans)
 internos_k = len(df_kanbans[df_kanbans['Tipo Etiqueta'] == 'KI'])
 externos_k = len(df_kanbans[df_kanbans['Tipo Etiqueta'] == 'KE'])
@@ -393,7 +421,6 @@ else: # Consulta / Planta
 
 tabs = st.tabs(lista_tabs)
 
-# HELPER DE MAPPING DE TABS SEGÚN ROL
 def obtener_tab(nombre):
     if nombre in lista_tabs:
         return tabs[lista_tabs.index(nombre)]
@@ -475,9 +502,7 @@ if tab_tracker:
         if df_tr.empty:
             st.info("No hay solicitudes de actualización pendientes en la cola.")
         else:
-            # Filtro por Estado
             filtro_est = st.radio("Filtrar Solicitudes:", ["Pendientes (Incompletas)", "Todas las Solicitudes", "Finalizadas"], horizontal=True)
-            
             df_tr_show = df_tr.copy()
             if filtro_est == "Pendientes (Incompletas)":
                 df_tr_show = df_tr_show[df_tr_show['Estado_Fisico'] != 'Entregado']
@@ -486,7 +511,6 @@ if tab_tracker:
 
             st.dataframe(df_tr_show, use_container_width=True)
             
-            # Solo Logística y Procesos pueden actualizar el tracker
             if rol_actual in ["Logistica", "Procesos"]:
                 st.markdown("---")
                 st.subheader("⚡ Actualizar Estado de Solicitud (Logística)")
@@ -574,8 +598,6 @@ if tab_crear:
                 df_kanbans = pd.concat([df_kanbans, pd.DataFrame([nuevo_reg])], ignore_index=True)
                 guardar_datos(df_kanbans)
                 registrar_log("CREO", proximo_k_val, material, medio_str, almacen_destino, puesto_destino, usr_act)
-                
-                # Generar orden automática en el Tracker Logístico
                 crear_solicitud_tracker(material, proximo_k_val, tipo_etiqueta_sap, puesto_destino, medio_str, "CÓDIGO NUEVO", "ARMAR PEDIDO", usr_act)
                 st.success(f"✅ ¡Kanban **{proximo_k_val}** creado y enviado al Tracker de Logística!")
                 st.rerun()
