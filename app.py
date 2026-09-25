@@ -156,11 +156,6 @@ COLUMNS = [
     'Fecha Modificación', 'Usuario Modificación'
 ]
 
-MAPEO_PUESTOS = {
-    "ARM HORQ": "ARM_HORQ", "SOLDROB08": "SOLROB08", "PREBAL01": "PRENBAL1",
-    "ALMACÉN": "PRINCIPAL", "LOGISTICA": "PRINCIPAL", "L010": "PRINCIPAL"
-}
-
 ALMACENES_PUESTOS = {
     "P110": ["ARM_HORQ", "ARM_MAZ1", "CORTE_01", "MECANIZA", "PRENBAL1", "ROSC_REM"],
     "P120": [
@@ -238,29 +233,30 @@ if not st.session_state['usuario_email']:
 # ==========================================
 def cargar_datos_disco():
     if os.path.exists(DB_FILE):
-        df = pd.read_excel(DB_FILE, sheet_name=SHEET_NAME)
-        for col in COLUMNS:
-            if col not in df.columns:
-                df[col] = None
-        
-        # Normalizar a string
-        df['Material'] = df['Material'].astype(str).str.strip().str.upper()
-        df['N° Etiquetas'] = df['N° Etiquetas'].astype(str).str.strip().str.upper()
+        try:
+            df = pd.read_excel(DB_FILE, sheet_name=SHEET_NAME)
+            for col in COLUMNS:
+                if col not in df.columns:
+                    df[col] = None
+            
+            df['Material'] = df['Material'].fillna('').astype(str).str.strip().str.upper()
+            df['N° Etiquetas'] = df['N° Etiquetas'].fillna('').astype(str).str.strip().str.upper()
 
-        def determinar_tipo_kanban(row):
-            cant_repo = row.get('Cantidad Reposicion')
-            cant_pp = row.get('Cantidad Punto de Pedido')
-            try:
-                if pd.notna(cant_repo) and pd.notna(cant_pp):
-                    return "GAVETA" if float(cant_repo) == float(cant_pp) else "TARJETA"
-            except (ValueError, TypeError):
-                pass
-            return "TARJETA"
-        df['Tipo Kanban'] = df.apply(determinar_tipo_kanban, axis=1)
-        return df[COLUMNS]
+            def determinar_tipo_kanban(row):
+                cant_repo = row.get('Cantidad Reposicion')
+                cant_pp = row.get('Cantidad Punto de Pedido')
+                try:
+                    if pd.notna(cant_repo) and pd.notna(cant_pp):
+                        return "GAVETA" if float(cant_repo) == float(cant_pp) else "TARJETA"
+                except (ValueError, TypeError):
+                    pass
+                return "TARJETA"
+            df['Tipo Kanban'] = df.apply(determinar_tipo_kanban, axis=1)
+            return df[COLUMNS].reset_index(drop=True)
+        except Exception:
+            return pd.DataFrame(columns=COLUMNS)
     return pd.DataFrame(columns=COLUMNS)
 
-# Inicializar o recuperar dataframe vivo en sesión
 if 'df_kanbans_session' not in st.session_state:
     st.session_state['df_kanbans_session'] = cargar_datos_disco()
 
@@ -268,9 +264,13 @@ def obtener_df_kanbans():
     return st.session_state['df_kanbans_session']
 
 def guardar_datos_session(df):
-    st.session_state['df_kanbans_session'] = df
-    with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:
-        df.to_excel(writer, sheet_name=SHEET_NAME, index=False)
+    df_clean = df.reset_index(drop=True)
+    st.session_state['df_kanbans_session'] = df_clean
+    try:
+        with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:
+            df_clean.to_excel(writer, sheet_name=SHEET_NAME, index=False)
+    except Exception as e:
+        st.error(f"Error al escribir en Excel: {e}")
 
 def cargar_packaging():
     if os.path.exists(PKG_FILE):
@@ -359,17 +359,22 @@ def crear_solicitud_tracker(material, codigo_k, tipo_kb, puesto_dest, medio, cam
     df_final = pd.concat([df_tr, nueva_fila], ignore_index=True)
     guardar_tracker(df_final)
 
+# BUSCAR PRIMER HUECO DISPONIBLE O REUTILIZAR CÓDIGOS LIBERADOS
 def obtener_siguiente_codigo_k(df):
     if df.empty or df['N° Etiquetas'].dropna().empty:
         return "K00000001"
     numeros = [int(m.group(0)) for val in df['N° Etiquetas'].dropna() if (m := re.search(r'\d+', str(val)))]
     if not numeros:
         return "K00000001"
+    
     set_numeros = set(numeros)
     max_num = max(numeros)
+    
+    # Reutilizar el primer número faltante
     for i in range(1, max_num + 1):
         if i not in set_numeros:
             return f"K{i:08d}"
+            
     return f"K{max_num + 1:08d}"
 
 df_kanbans = obtener_df_kanbans()
@@ -599,23 +604,33 @@ if tab_crear:
                 usr_act = st.session_state['usuario_email']
                 df_curr = obtener_df_kanbans()
                 
+                codigo_k_nuevo = obtener_siguiente_codigo_k(df_curr)
+                
                 nuevo_reg = {
-                    'N° Etiquetas': proximo_k_val, 'Tipo Etiqueta': tipo_etiqueta_sap,
-                    'Tipo Kanban': tipo_soporte, 'Medio': medio_str, 'Material': material,
-                    'Centro': centro, 'Almacén Origen': almacen_origen, 'Almacen Destino': almacen_destino,
-                    'Puesto trabajo Origen': puesto_origen, 'Puesto de trabajo destino': puesto_destino,
-                    'Cantidad Reposicion': cant_repo, 'Unidad Reposicion': unidad,
-                    'Cantidad Punto de Pedido': cant_pp, 'Tiempo preparación abast. (en días)': dias_prep,
-                    'Fecha Modificación': fecha_actual, 'Usuario Modificación': usr_act
+                    'N° Etiquetas': codigo_k_nuevo, 
+                    'Tipo Etiqueta': tipo_etiqueta_sap,
+                    'Tipo Kanban': tipo_soporte, 
+                    'Medio': medio_str, 
+                    'Material': material,
+                    'Centro': centro, 
+                    'Almacén Origen': almacen_origen, 
+                    'Almacen Destino': almacen_destino,
+                    'Puesto trabajo Origen': puesto_origen, 
+                    'Puesto de trabajo destino': puesto_destino,
+                    'Cantidad Reposicion': cant_repo, 
+                    'Unidad Reposicion': unidad,
+                    'Cantidad Punto de Pedido': cant_pp, 
+                    'Tiempo preparación abast. (en días)': dias_prep,
+                    'Fecha Modificación': fecha_actual, 
+                    'Usuario Modificación': usr_act
                 }
                 
-                # Sincronización inmediata en session state y disco
                 df_updated = pd.concat([df_curr, pd.DataFrame([nuevo_reg])], ignore_index=True)
                 guardar_datos_session(df_updated)
                 
-                registrar_log("CREO", proximo_k_val, material, medio_str, almacen_destino, puesto_destino, usr_act)
-                crear_solicitud_tracker(material, proximo_k_val, tipo_etiqueta_sap, puesto_destino, medio_str, "CÓDIGO NUEVO", "ARMAR PEDIDO", usr_act)
-                st.success(f"✅ ¡Kanban **{proximo_k_val}** creado! Enviado a Logística con acción: **ARMAR PEDIDO**.")
+                registrar_log("CREO", codigo_k_nuevo, material, medio_str, almacen_destino, puesto_destino, usr_act)
+                crear_solicitud_tracker(material, codigo_k_nuevo, tipo_etiqueta_sap, puesto_destino, medio_str, "CÓDIGO NUEVO", "ARMAR PEDIDO", usr_act)
+                st.success(f"✅ ¡Kanban **{codigo_k_nuevo}** creado exitosamente! Solicitud enviada a Logística.")
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -635,7 +650,6 @@ if tab_mod:
             busqueda = st.text_input("Ingrese Código de Material a Buscar (ej: CM000044):", key="search_mod").upper().strip()
             
             if busqueda:
-                # Filtrar sobre la base en memoria viva
                 kanbans_encontrados = df_live[
                     (df_live['Material'].astype(str).str.strip().str.upper() == busqueda) |
                     (df_live['Material'].astype(str).str.contains(busqueda, na=False, regex=False)) |
@@ -735,7 +749,6 @@ if tab_export:
         df_export_live = obtener_df_kanbans()
         st.dataframe(df_export_live, use_container_width=True)
         
-        # Generar archivo Excel en memoria instantáneamente
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df_export_live.to_excel(writer, sheet_name=SHEET_NAME, index=False)
