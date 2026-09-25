@@ -312,10 +312,12 @@ def registrar_log(accion, codigo_k, material, medio, alm_dest, puesto_dest, usua
 def cargar_tracker():
     if os.path.exists(TRACKER_FILE):
         try:
-            df_tr = pd.read_csv(TRACKER_FILE, on_bad_lines='skip')
+            df_tr = pd.read_csv(TRACKER_FILE, on_bad_lines='skip', dtype=str)
             for col in TRACKER_COLUMNS:
                 if col not in df_tr.columns:
-                    df_tr[col] = None
+                    df_tr[col] = "-"
+            # Asegurar que todas las columnas sean tratadas como string para evitar errores de tipo
+            df_tr = df_tr.fillna("-").astype(str)
             return df_tr[TRACKER_COLUMNS]
         except Exception:
             return pd.DataFrame(columns=TRACKER_COLUMNS)
