@@ -229,9 +229,9 @@ if not st.session_state['usuario_email']:
     st.stop()
 
 # ==========================================
-# MANEJO DE BASE DE DATOS EN TIEMPO REAL
+# MANEJO CENTRALIZADO DE BASE EN VIVO Y DISCO
 # ==========================================
-def cargar_datos_disco():
+def cargar_base_desde_disco():
     if os.path.exists(DB_FILE):
         try:
             df = pd.read_excel(DB_FILE, sheet_name=SHEET_NAME)
@@ -257,20 +257,22 @@ def cargar_datos_disco():
             return pd.DataFrame(columns=COLUMNS)
     return pd.DataFrame(columns=COLUMNS)
 
-if 'df_kanbans_session' not in st.session_state:
-    st.session_state['df_kanbans_session'] = cargar_datos_disco()
+# Inicialización única de memoria viva en Session State
+if 'df_kanbans_global' not in st.session_state:
+    st.session_state['df_kanbans_global'] = cargar_base_desde_disco()
 
-def obtener_df_kanbans():
-    return st.session_state['df_kanbans_session']
+def obtener_base_kanbans():
+    return st.session_state['df_kanbans_global']
 
-def guardar_datos_session(df):
-    df_clean = df.reset_index(drop=True)
-    st.session_state['df_kanbans_session'] = df_clean
+def actualizar_base_kanbans(nuevo_df):
+    """Actualiza simultáneamente el estado global en RAM y el archivo físico TablaZ.xlsx"""
+    df_limpio = nuevo_df.reset_index(drop=True)
+    st.session_state['df_kanbans_global'] = df_limpio
     try:
         with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:
-            df_clean.to_excel(writer, sheet_name=SHEET_NAME, index=False)
+            df_limpio.to_excel(writer, sheet_name=SHEET_NAME, index=False)
     except Exception as e:
-        st.error(f"Error al escribir en Excel: {e}")
+        st.error(f"⚠️ Error al guardar en el archivo Excel físico: {e}")
 
 def cargar_packaging():
     if os.path.exists(PKG_FILE):
@@ -359,7 +361,6 @@ def crear_solicitud_tracker(material, codigo_k, tipo_kb, puesto_dest, medio, cam
     df_final = pd.concat([df_tr, nueva_fila], ignore_index=True)
     guardar_tracker(df_final)
 
-# BUSCAR PRIMER HUECO DISPONIBLE O REUTILIZAR CÓDIGOS LIBERADOS
 def obtener_siguiente_codigo_k(df):
     if df.empty or df['N° Etiquetas'].dropna().empty:
         return "K00000001"
@@ -370,14 +371,13 @@ def obtener_siguiente_codigo_k(df):
     set_numeros = set(numeros)
     max_num = max(numeros)
     
-    # Reutilizar el primer número faltante
     for i in range(1, max_num + 1):
         if i not in set_numeros:
             return f"K{i:08d}"
             
     return f"K{max_num + 1:08d}"
 
-df_kanbans = obtener_df_kanbans()
+df_kanbans = obtener_base_kanbans()
 dict_pkg = cargar_packaging()
 rol_actual = st.session_state.get('usuario_rol', 'Consulta')
 
@@ -404,7 +404,7 @@ with col_logout:
     if st.button("Cerrar Sesión", use_container_width=True):
         st.session_state['usuario_email'] = None
         st.session_state['usuario_rol'] = None
-        st.session_state.pop('df_kanbans_session', None)
+        st.session_state.pop('df_kanbans_global', None)
         st.rerun()
 
 total_k = len(df_kanbans)
@@ -421,13 +421,13 @@ kpi4.metric("Próximo Código K", proximo_k_val)
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ==========================================
-# MENÚ POR PERFILES (ROLES)
+# MENÚ POR PERFILES
 # ==========================================
 if rol_actual == "Procesos":
     lista_tabs = ["📈 Panel KPIs & Métricas", "🚚 Tracker de Ejecución Logística", "➕ Crear Nuevo Kanban", "✏️ Modificar y Eliminar", "📊 Exportar Datos", "📜 Historial Auditoría"]
 elif rol_actual == "Logistica":
     lista_tabs = ["🚚 Tracker de Ejecución Logística", "📈 Panel KPIs & Métricas", "📋 Consulta General", "📊 Exportar Datos para SAP", "📜 Historial Auditoría"]
-else: # Consulta / Planta
+else:
     lista_tabs = ["📈 Panel KPIs & Métricas", "📋 Consulta General", "🚚 Estado de Solicitudes"]
 
 tabs = st.tabs(lista_tabs)
@@ -445,7 +445,7 @@ if tab_kpis:
     with tab_kpis:
         st.subheader("📊 Panel Interactivo de KPIs y Analítica")
         df_logs_kpi = cargar_logs()
-        df_k_live = obtener_df_kanbans()
+        df_k_live = obtener_base_kanbans()
         
         with st.expander("🔍 Filtros de Análisis", expanded=True):
             f_col1, f_col2, f_col3 = st.columns(3)
@@ -566,7 +566,7 @@ if tab_tracker:
                         st.rerun()
 
 # ==========================================
-# VISTA: CREAR KANBAN (SOLO PROCESOS)
+# VISTA: CREAR KANBAN
 # ==========================================
 tab_crear = obtener_tab("➕ Crear Nuevo Kanban")
 if tab_crear:
@@ -602,52 +602,52 @@ if tab_crear:
             else:
                 fecha_actual = obtener_fecha_hora_arg()
                 usr_act = st.session_state['usuario_email']
-                df_curr = obtener_df_kanbans()
+                df_curr = obtener_base_kanbans()
                 
                 codigo_k_nuevo = obtener_siguiente_codigo_k(df_curr)
                 
                 nuevo_reg = {
-                    'N° Etiquetas': codigo_k_nuevo, 
-                    'Tipo Etiqueta': tipo_etiqueta_sap,
-                    'Tipo Kanban': tipo_soporte, 
-                    'Medio': medio_str, 
-                    'Material': material,
-                    'Centro': centro, 
-                    'Almacén Origen': almacen_origen, 
-                    'Almacen Destino': almacen_destino,
-                    'Puesto trabajo Origen': puesto_origen, 
-                    'Puesto de trabajo destino': puesto_destino,
+                    'N° Etiquetas': str(codigo_k_nuevo), 
+                    'Tipo Etiqueta': str(tipo_etiqueta_sap),
+                    'Tipo Kanban': str(tipo_soporte), 
+                    'Medio': str(medio_str), 
+                    'Material': str(material),
+                    'Centro': str(centro), 
+                    'Almacén Origen': str(almacen_origen), 
+                    'Almacen Destino': str(almacen_destino),
+                    'Puesto trabajo Origen': str(puesto_origen) if puesto_origen else "-", 
+                    'Puesto de trabajo destino': str(puesto_destino),
                     'Cantidad Reposicion': cant_repo, 
-                    'Unidad Reposicion': unidad,
+                    'Unidad Reposicion': str(unidad),
                     'Cantidad Punto de Pedido': cant_pp, 
                     'Tiempo preparación abast. (en días)': dias_prep,
                     'Fecha Modificación': fecha_actual, 
-                    'Usuario Modificación': usr_act
+                    'Usuario Modificación': str(usr_act)
                 }
                 
-                df_updated = pd.concat([df_curr, pd.DataFrame([nuevo_reg])], ignore_index=True)
-                guardar_datos_session(df_updated)
+                # Actualización directa global (RAM + Excel)
+                df_actualizado = pd.concat([df_curr, pd.DataFrame([nuevo_reg])], ignore_index=True)
+                actualizar_base_kanbans(df_actualizado)
                 
                 registrar_log("CREO", codigo_k_nuevo, material, medio_str, almacen_destino, puesto_destino, usr_act)
                 crear_solicitud_tracker(material, codigo_k_nuevo, tipo_etiqueta_sap, puesto_destino, medio_str, "CÓDIGO NUEVO", "ARMAR PEDIDO", usr_act)
-                st.success(f"✅ ¡Kanban **{codigo_k_nuevo}** creado exitosamente! Solicitud enviada a Logística.")
+                st.success(f"✅ ¡Kanban **{codigo_k_nuevo}** creado exitosamente! Registrado en todas las pestañas.")
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ==========================================
-# VISTA: MODIFICAR Y ELIMINAR (SOLO PROCESOS)
+# VISTA: MODIFICAR Y ELIMINAR
 # ==========================================
 tab_mod = obtener_tab("✏️ Modificar y Eliminar")
 if tab_mod:
     with tab_mod:
         st.subheader("✏️ Modificar y Eliminar Kanban")
-        df_live = obtener_df_kanbans()
+        df_live = obtener_base_kanbans()
         
         m_col_left, m_col_right = st.columns([2, 1])
         
-        # --- BÚSQUEDA EN TIEMPO REAL ---
         with m_col_left:
-            busqueda = st.text_input("Ingrese Código de Material a Buscar (ej: CM000044):", key="search_mod").upper().strip()
+            busqueda = st.text_input("Ingrese Código de Material o Código K a buscar:", key="search_mod").upper().strip()
             
             if busqueda:
                 kanbans_encontrados = df_live[
@@ -690,6 +690,8 @@ if tab_mod:
                         
                         df_live.loc[idx, 'Tipo Kanban'] = m_tipo_soporte
                         df_live.loc[idx, 'Medio'] = m_medio_str
+                        df_live.loc[idx, 'Almacén Origen'] = m_almacen_origen
+                        df_live.loc[idx, 'Almacen Destino'] = m_almacen_destino
                         df_live.loc[idx, 'Puesto de trabajo destino'] = m_puesto_destino
                         df_live.loc[idx, 'Cantidad Reposicion'] = m_cant_repo
                         df_live.loc[idx, 'Cantidad Punto de Pedido'] = m_cant_pp
@@ -697,16 +699,15 @@ if tab_mod:
                         df_live.loc[idx, 'Usuario Modificación'] = usr_act
                         
                         mat_mod = str(df_live.loc[idx, 'Material'])
-                        guardar_datos_session(df_live)
+                        actualizar_base_kanbans(df_live)
                         
                         registrar_log("ACTUALIZO", k_sel, mat_mod, m_medio_str, m_almacen_destino, m_puesto_destino, usr_act)
                         crear_solicitud_tracker(mat_mod, k_sel, df_live.loc[idx, 'Tipo Etiqueta'], m_puesto_destino, m_medio_str, "ACTUALIZACIÓN", "IMPRIMIR / REEMPLAZAR", usr_act)
-                        st.success(f"✅ Kanban **{k_sel}** actualizado! Acción enviada a Logística: **IMPRIMIR / REEMPLAZAR**.")
+                        st.success(f"✅ Kanban **{k_sel}** actualizado. Cambios sincronizados.")
                         st.rerun()
                 else:
-                    st.warning(f"⚠️ No se encontraron Kanbans registrados para el material o código: **{busqueda}**")
+                    st.warning(f"⚠️ No se encontraron Kanbans registrados para: **{busqueda}**")
 
-        # --- SECCIÓN ELIMINACIÓN ---
         with m_col_right:
             st.markdown("#### 🗑️ Dar de Baja Kanban")
             opciones_del_k = [
@@ -725,12 +726,13 @@ if tab_mod:
                 tipo_del = str(row_del['Tipo Etiqueta'])
                 usr_act = st.session_state['usuario_email']
                 
-                df_updated = df_live[df_live['N° Etiquetas'] != k_del_sel]
-                guardar_datos_session(df_updated)
+                # Quitar registro y sincronizar todo
+                df_nuevo_global = df_live[df_live['N° Etiquetas'] != k_del_sel]
+                actualizar_base_kanbans(df_nuevo_global)
                 
                 registrar_log("ELIMINO", k_del_sel, mat_del, medio_del, str(row_del['Almacen Destino']), puesto_del, usr_act)
                 crear_solicitud_tracker(mat_del, k_del_sel, tipo_del, puesto_del, medio_del, "BAJA / ELIMINACIÓN", "RETIRAR KB", usr_act)
-                st.success(f"♻️ Kanban **{k_del_sel}** dado de baja. Solicitud enviada a Logística: **RETIRAR KB**.")
+                st.success(f"♻️ Kanban **{k_del_sel}** eliminado de la base activa y registrado en Historial.")
                 st.rerun()
 
 # ==========================================
@@ -739,14 +741,16 @@ if tab_mod:
 tab_consulta = obtener_tab("📋 Consulta General")
 if tab_consulta:
     with tab_consulta:
-        st.subheader("📋 Consulta General de Kanbans")
-        st.dataframe(obtener_df_kanbans(), use_container_width=True)
+        st.subheader("📋 Consulta General de Kanbans (En Vivo)")
+        st.dataframe(obtener_base_kanbans(), use_container_width=True)
 
 tab_export = obtener_tab("📊 Exportar Datos") or obtener_tab("📊 Exportar Datos para SAP")
 if tab_export:
     with tab_export:
         st.subheader("📊 Exportar Tabla Z Completa para SAP")
-        df_export_live = obtener_df_kanbans()
+        df_export_live = obtener_base_kanbans()
+        
+        st.caption("Esta vista contiene siempre los últimos datos en vivo modificados por la planta.")
         st.dataframe(df_export_live, use_container_width=True)
         
         output = io.BytesIO()
@@ -755,9 +759,9 @@ if tab_export:
         excel_bytes = output.getvalue()
         
         st.download_button(
-            label="📥 Descargar Tabla Z en Excel (.xlsx)", 
+            label="📥 Descargar Tabla Z Actualizada (.xlsx)", 
             data=excel_bytes, 
-            file_name="TablaZ_Kanbans.xlsx", 
+            file_name="TablaZ_Kanbans_Actualizada.xlsx", 
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
             type="primary"
         )
