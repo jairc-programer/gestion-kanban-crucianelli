@@ -102,7 +102,6 @@ SHEET_NAME = "Kanbans CRUCIANELLI"
 LOG_COLUMNS = ["Fecha_Hora", "Acción", "Código_K", "Material", "Medio", "Almacén_Destino", "Puesto_Destino", "Usuario"]
 TRACKER_COLUMNS = ["ID_Solicitud", "Fecha_Solicitud", "Material", "Código_K", "Tipo_KB", "Puesto_Destino", "Medio", "Cambio", "Acción_Requerida", "Cargado_SAP", "Impreso", "Fecha_Impresion", "Estado_Fisico", "Fecha_Finalizacion", "Observación", "Usuario_Procesos"]
 
-# Matriz de roles según Excel
 ROLES_PREDEFINIDOS = {
     # 🛠️ Ing. de Procesos
     "jairc@crucianelli.com": "Procesos", "mmagarello@crucianelli.com": "Procesos",
@@ -201,7 +200,6 @@ if not st.session_state['usuario_email']:
     with col_auth:
         tab_login, tab_register = st.tabs(["🔐 Iniciar Sesión", "📝 Registrarse"])
         
-        # --- TAB LOGIN ---
         with tab_login:
             email_input = st.text_input("Correo electrónico (@crucianelli.com):", key="log_email").strip().lower()
             password_input = st.text_input("Contraseña:", type="password", key="log_pass")
@@ -217,9 +215,8 @@ if not st.session_state['usuario_email']:
                     st.success(f"Bienvenido/a {email_input}")
                     st.rerun()
                 else:
-                    st.error("❌ Credenciales incorrectas o usuario no registrado. Registrese en la pestaña adyacente.")
+                    st.error("❌ Credenciales incorrectas o usuario no registrado.")
 
-        # --- TAB REGISTRO LIBRE ---
         with tab_register:
             reg_email = st.text_input("Correo corporativo (@crucianelli.com):", key="reg_email").strip().lower()
             reg_pass1 = st.text_input("Cree su contraseña:", type="password", key="reg_pass1")
@@ -235,7 +232,6 @@ if not st.session_state['usuario_email']:
                 elif reg_email in USUARIOS_REGISTRADOS:
                     st.warning("⚠️ Este usuario ya se encuentra registrado. Inicie sesión directamente.")
                 else:
-                    # Asignar rol predefinido o 'Consulta'
                     rol_asignado = ROLES_PREDEFINIDOS.get(reg_email, "Consulta")
                     USUARIOS_REGISTRADOS[reg_email] = {"pass": reg_pass1, "rol": rol_asignado}
                     guardar_usuarios(USUARIOS_REGISTRADOS)
@@ -521,7 +517,7 @@ if tab_tracker:
                     with col_tr1:
                         sol_sel = st.selectbox("Seleccione ID Solicitud a actualizar:", sol_ids)
                         row_tr = df_tr[df_tr['ID_Solicitud'] == sol_sel].iloc[0]
-                        st.caption(f"**Material:** {row_tr['Material']} | **Código K:** {row_tr['Código_K']} | **Puesto:** {row_tr['Puesto_Destino']}")
+                        st.caption(f"**Material:** {row_tr['Material']} | **Código K:** {row_tr['Código_K']} | **Acción:** {row_tr['Acción_Requerida']}")
 
                     with col_tr2:
                         chk_sap = st.checkbox("Cargado en SAP", value=(row_tr['Cargado_SAP'] == 'SI'))
@@ -598,8 +594,10 @@ if tab_crear:
                 df_kanbans = pd.concat([df_kanbans, pd.DataFrame([nuevo_reg])], ignore_index=True)
                 guardar_datos(df_kanbans)
                 registrar_log("CREO", proximo_k_val, material, medio_str, almacen_destino, puesto_destino, usr_act)
+                
+                # PARAMETRIZACIÓN ACCIÓN EN CREACIÓN
                 crear_solicitud_tracker(material, proximo_k_val, tipo_etiqueta_sap, puesto_destino, medio_str, "CÓDIGO NUEVO", "ARMAR PEDIDO", usr_act)
-                st.success(f"✅ ¡Kanban **{proximo_k_val}** creado y enviado al Tracker de Logística!")
+                st.success(f"✅ ¡Kanban **{proximo_k_val}** creado! Enviado a Logística con acción: **ARMAR PEDIDO**.")
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -610,44 +608,74 @@ tab_mod = obtener_tab("✏️ Modificar y Eliminar")
 if tab_mod:
     with tab_mod:
         st.subheader("✏️ Modificar y Eliminar Kanban")
-        busqueda_material = st.text_input("Ingrese Código de Material a Buscar:", key="search_mod").upper().strip()
-        if busqueda_material:
-            kanbans_encontrados = df_kanbans[df_kanbans['Material'] == busqueda_material]
-            if not kanbans_encontrados.empty:
-                k_sel = st.selectbox("Seleccione el Código K:", kanbans_encontrados['N° Etiquetas'].tolist())
-                row = kanbans_encontrados[kanbans_encontrados['N° Etiquetas'] == k_sel].iloc[0]
-                
-                m_col1, m_col2, m_col3 = st.columns(3)
-                with m_col1:
-                    m_centro = st.text_input("Centro", value=str(row['Centro'] or "A110"), key="m_centro")
-                    m_tipo_soporte = st.selectbox("Tipo de Kanban", ["GAVETA", "TARJETA"], index=0 if "GAVETA" in str(row['Tipo Kanban']).upper() else 1, key="m_soporte")
-                    m_medio_str = f"GAVETA {st.selectbox('Tamaño Gaveta', OPCIONES_GAVETA, key='m_gav')}" if m_tipo_soporte == "GAVETA" else st.selectbox("Medio Físico", OPCIONES_SOPORTE_TARJETA, key="m_tarj")
-
-                with m_col2:
-                    m_almacen_origen = st.selectbox("Almacén Origen", LISTA_ALMACENES, index=LISTA_ALMACENES.index(row['Almacén Origen'] if row['Almacén Origen'] in LISTA_ALMACENES else "L010"), key="m_alm_o")
-                    m_almacen_destino = st.selectbox("Almacén Destino", LISTA_ALMACENES, index=LISTA_ALMACENES.index(row['Almacen Destino'] if row['Almacen Destino'] in LISTA_ALMACENES else "P140"), key="m_alm_d")
-                    m_puesto_destino = st.text_input("Puesto Destino", value=str(row['Puesto de trabajo destino'] or ''), key="m_p_dest").upper().strip()
-
-                with m_col3:
-                    m_cant_repo = st.number_input("Cantidad Reposición", min_value=0.0, value=float(row['Cantidad Reposicion'] or 0.0), key="m_cant_r")
-                    m_cant_pp = st.number_input("Cantidad Punto Pedido", value=m_cant_repo, disabled=True, key="m_cant_p_g") if m_tipo_soporte == "GAVETA" else st.number_input("Cantidad Punto Pedido", min_value=0.0, value=float(row['Cantidad Punto de Pedido'] or 0.0), key="m_cant_p_t")
-
-                if st.button("💾 Guardar Cambios", type="primary"):
-                    usr_act = st.session_state['usuario_email']
-                    idx = df_kanbans[df_kanbans['N° Etiquetas'] == k_sel].index[0]
-                    df_kanbans.loc[idx, 'Tipo Kanban'] = m_tipo_soporte
-                    df_kanbans.loc[idx, 'Medio'] = m_medio_str
-                    df_kanbans.loc[idx, 'Puesto de trabajo destino'] = m_puesto_destino
-                    df_kanbans.loc[idx, 'Cantidad Reposicion'] = m_cant_repo
-                    df_kanbans.loc[idx, 'Cantidad Punto de Pedido'] = m_cant_pp
-                    df_kanbans.loc[idx, 'Fecha Modificación'] = obtener_fecha_hora_arg()
-                    df_kanbans.loc[idx, 'Usuario Modificación'] = usr_act
+        
+        m_col_left, m_col_right = st.columns([2, 1])
+        
+        # --- SECCIÓN MODIFICACIÓN ---
+        with m_col_left:
+            busqueda_material = st.text_input("Ingrese Código de Material a Buscar:", key="search_mod").upper().strip()
+            if busqueda_material:
+                kanbans_encontrados = df_kanbans[df_kanbans['Material'] == busqueda_material]
+                if not kanbans_encontrados.empty:
+                    k_sel = st.selectbox("Seleccione el Código K:", kanbans_encontrados['N° Etiquetas'].tolist())
+                    row = kanbans_encontrados[kanbans_encontrados['N° Etiquetas'] == k_sel].iloc[0]
                     
-                    guardar_datos(df_kanbans)
-                    registrar_log("ACTUALIZO", k_sel, busqueda_material, m_medio_str, m_almacen_destino, m_puesto_destino, usr_act)
-                    crear_solicitud_tracker(busqueda_material, k_sel, df_kanbans.loc[idx, 'Tipo Etiqueta'], m_puesto_destino, m_medio_str, "ACTUALIZACIÓN", "IMPRIMIR", usr_act)
-                    st.success(f"✅ Kanban **{k_sel}** actualizado y notificado a Logística.")
-                    st.rerun()
+                    m_col1, m_col2, m_col3 = st.columns(3)
+                    with m_col1:
+                        m_centro = st.text_input("Centro", value=str(row['Centro'] or "A110"), key="m_centro")
+                        m_tipo_soporte = st.selectbox("Tipo de Kanban", ["GAVETA", "TARJETA"], index=0 if "GAVETA" in str(row['Tipo Kanban']).upper() else 1, key="m_soporte")
+                        m_medio_str = f"GAVETA {st.selectbox('Tamaño Gaveta', OPCIONES_GAVETA, key='m_gav')}" if m_tipo_soporte == "GAVETA" else st.selectbox("Medio Físico", OPCIONES_SOPORTE_TARJETA, key="m_tarj")
+
+                    with m_col2:
+                        m_almacen_origen = st.selectbox("Almacén Origen", LISTA_ALMACENES, index=LISTA_ALMACENES.index(row['Almacén Origen'] if row['Almacén Origen'] in LISTA_ALMACENES else "L010"), key="m_alm_o")
+                        m_almacen_destino = st.selectbox("Almacén Destino", LISTA_ALMACENES, index=LISTA_ALMACENES.index(row['Almacen Destino'] if row['Almacen Destino'] in LISTA_ALMACENES else "P140"), key="m_alm_d")
+                        m_puesto_destino = st.text_input("Puesto Destino", value=str(row['Puesto de trabajo destino'] or ''), key="m_p_dest").upper().strip()
+
+                    with m_col3:
+                        m_cant_repo = st.number_input("Cantidad Reposición", min_value=0.0, value=float(row['Cantidad Reposicion'] or 0.0), key="m_cant_r")
+                        m_cant_pp = st.number_input("Cantidad Punto Pedido", value=m_cant_repo, disabled=True, key="m_cant_p_g") if m_tipo_soporte == "GAVETA" else st.number_input("Cantidad Punto Pedido", min_value=0.0, value=float(row['Cantidad Punto de Pedido'] or 0.0), key="m_cant_p_t")
+
+                    if st.button("💾 Guardar Cambios", type="primary"):
+                        usr_act = st.session_state['usuario_email']
+                        idx = df_kanbans[df_kanbans['N° Etiquetas'] == k_sel].index[0]
+                        df_kanbans.loc[idx, 'Tipo Kanban'] = m_tipo_soporte
+                        df_kanbans.loc[idx, 'Medio'] = m_medio_str
+                        df_kanbans.loc[idx, 'Puesto de trabajo destino'] = m_puesto_destino
+                        df_kanbans.loc[idx, 'Cantidad Reposicion'] = m_cant_repo
+                        df_kanbans.loc[idx, 'Cantidad Punto de Pedido'] = m_cant_pp
+                        df_kanbans.loc[idx, 'Fecha Modificación'] = obtener_fecha_hora_arg()
+                        df_kanbans.loc[idx, 'Usuario Modificación'] = usr_act
+                        
+                        guardar_datos(df_kanbans)
+                        registrar_log("ACTUALIZO", k_sel, busqueda_material, m_medio_str, m_almacen_destino, m_puesto_destino, usr_act)
+                        
+                        # PARAMETRIZACIÓN ACCIÓN EN MODIFICACIÓN
+                        crear_solicitud_tracker(busqueda_material, k_sel, df_kanbans.loc[idx, 'Tipo Etiqueta'], m_puesto_destino, m_medio_str, "ACTUALIZACIÓN", "IMPRIMIR / REEMPLAZAR", usr_act)
+                        st.success(f"✅ Kanban **{k_sel}** actualizado! Acción enviada a Logística: **IMPRIMIR / REEMPLAZAR**.")
+                        st.rerun()
+
+        # --- SECCIÓN ELIMINACIÓN ---
+        with m_col_right:
+            st.markdown("#### 🗑️ Dar de Baja Kanban")
+            k_del_sel = st.selectbox("Seleccionar Código K a eliminar:", ["-- Seleccionar --"] + list(df_kanbans['N° Etiquetas'].dropna().unique()), key="k_del_select")
+            if st.button("🗑️ Eliminar y Solicitar Retiro", use_container_width=True) and k_del_sel != "-- Seleccionar --":
+                row_del = df_kanbans[df_kanbans['N° Etiquetas'] == k_del_sel].iloc[0]
+                mat_del = str(row_del['Material'])
+                puesto_del = str(row_del['Puesto de trabajo destino'])
+                medio_del = str(row_del['Medio'] or "SIN MEDIO DEFINIDO")
+                tipo_del = str(row_del['Tipo Etiqueta'])
+                usr_act = st.session_state['usuario_email']
+                
+                # Borrar de la base activa
+                df_kanbans = df_kanbans[df_kanbans['N° Etiquetas'] != k_del_sel]
+                guardar_datos(df_kanbans)
+                
+                registrar_log("ELIMINO", k_del_sel, mat_del, medio_del, str(row_del['Almacen Destino']), puesto_del, usr_act)
+                
+                # PARAMETRIZACIÓN ACCIÓN EN ELIMINACIÓN
+                crear_solicitud_tracker(mat_del, k_del_sel, tipo_del, puesto_del, medio_del, "BAJA / ELIMINACIÓN", "RETIRAR KB", usr_act)
+                st.success(f"♻️ Kanban **{k_del_sel}** dado de baja. Solicitud enviada a Logística: **RETIRAR KB**.")
+                st.rerun()
 
 # ==========================================
 # VISTAS GENERALES: CONSULTA / EXPORTAR / LOGS
