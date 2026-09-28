@@ -85,6 +85,21 @@ st.markdown("""
         align-items: center;
         margin-bottom: 16px;
     }
+    
+    .btn-google {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background-color: #ffffff;
+        color: #333333;
+        font-weight: 600;
+        padding: 10px 16px;
+        border-radius: 8px;
+        text-decoration: none;
+        border: 1px solid #cccccc;
+        width: 100%;
+        margin-bottom: 15px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -184,14 +199,30 @@ if 'usuario_email' not in st.session_state:
 if 'usuario_rol' not in st.session_state:
     st.session_state['usuario_rol'] = None
 
+# ==========================================
+# PANTALLA DE AUTENTICACIÓN (LOGIN & GOOGLE)
+# ==========================================
 if not st.session_state['usuario_email']:
     st.title("📦 Sistema de Gestión de Kanbans - Crucianelli")
     col_auth, _ = st.columns([1.5, 2])
     with col_auth:
-        tab_login, tab_register = st.tabs(["🔐 Iniciar Sesión", "📝 Registrarse"])
+        st.markdown('<div class="card-container">', unsafe_allow_html=True)
+        st.subheader("🔐 Acceso al Sistema")
+        
+        # Botón para iniciar sesión con Google Workspace Corporativo
+        st.markdown("""
+            <button class="btn-google" onclick="alert('Conectando con Google Workspace @crucianelli.com...')">
+                <img src="https://www.svgrepo.com/show/475656/google-color.svg" width="18" style="margin-right:8px;">
+                Iniciar Sesión con Google (@crucianelli.com)
+            </button>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("<p style='text-align:center; color:#888;'>— o acceso directo —</p>", unsafe_allow_html=True)
+        
+        tab_login, tab_register = st.tabs(["🔑 Iniciar Sesión Directo", "📝 Registrarse"])
         
         with tab_login:
-            email_input = st.text_input("Correo electrónico (@crucianelli.com):", key="log_email").strip().lower()
+            email_input = st.text_input("Correo corporativo (@crucianelli.com):", key="log_email").strip().lower()
             password_input = st.text_input("Contraseña:", type="password", key="log_pass")
             
             if st.button("Ingresar", type="primary", use_container_width=True):
@@ -226,10 +257,11 @@ if not st.session_state['usuario_email']:
                     USUARIOS_REGISTRADOS[reg_email] = {"pass": reg_pass1, "rol": rol_asignado}
                     guardar_usuarios(USUARIOS_REGISTRADOS)
                     st.success(f"✅ ¡Cuenta creada exitosamente para {reg_email}! (Rol asignado: {rol_asignado}). Ya puede iniciar sesión.")
+        st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
 # ==========================================
-# MANEJO CENTRALIZADO DE BASE EN VIVO Y DISCO
+# MANEJO CENTRALIZADO DE BASE EN VIVO
 # ==========================================
 def cargar_base_desde_disco():
     if os.path.exists(DB_FILE):
@@ -426,14 +458,14 @@ kpi4.metric("Próximo Código K", proximo_k_val)
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ==========================================
-# MENÚ POR PERFILES
+# MENÚ POR PERFILES Y NAVEGACIÓN
 # ==========================================
 if rol_actual == "Procesos":
-    lista_tabs = ["📈 Panel KPIs & Métricas", "🚚 Tracker de Ejecución Logística", "➕ Crear Nuevo Kanban", "✏️ Modificar y Eliminar", "📊 Exportar Datos", "📜 Historial Auditoría"]
+    lista_tabs = ["📈 Panel KPIs & Métricas", "🚚 Tracker de Ejecución Logística", "➕ Crear Nuevo Kanban", "✏️ Modificar y Eliminar", "📊 Exportar Datos", "📜 Historial Auditoría", "👤 Mi Perfil"]
 elif rol_actual == "Logistica":
-    lista_tabs = ["🚚 Tracker de Ejecución Logística", "📈 Panel KPIs & Métricas", "📋 Consulta General", "📊 Exportar Datos para SAP", "📜 Historial Auditoría"]
+    lista_tabs = ["🚚 Tracker de Ejecución Logística", "📈 Panel KPIs & Métricas", "📋 Consulta General", "📊 Exportar Datos para SAP", "📜 Historial Auditoría", "👤 Mi Perfil"]
 else:
-    lista_tabs = ["📈 Panel KPIs & Métricas", "📋 Consulta General", "🚚 Estado de Solicitudes"]
+    lista_tabs = ["📈 Panel KPIs & Métricas", "📋 Consulta General", "🚚 Estado de Solicitudes", "👤 Mi Perfil"]
 
 tabs = st.tabs(lista_tabs)
 
@@ -452,7 +484,6 @@ if tab_kpis:
         df_logs_kpi = cargar_logs()
         df_k_live = obtener_base_kanbans()
         
-        # --- FILTROS GLOBALES DE KPIS ---
         with st.expander("🔍 Filtros de Análisis", expanded=True):
             f_col1, f_col2, f_col3 = st.columns(3)
             with f_col1:
@@ -468,7 +499,6 @@ if tab_kpis:
             with f_col3:
                 f_usr = st.selectbox("Usuario Responsable:", ["Todos"] + (list(df_logs_kpi['Usuario'].dropna().unique()) if not df_logs_kpi.empty else []), key="kpi_usr")
 
-        # Filtrado de logs según controles
         df_logs_filtrado = df_logs_kpi.copy() if not df_logs_kpi.empty else pd.DataFrame()
         if not df_logs_filtrado.empty and isinstance(rango_fechas_kpi, tuple) and len(rango_fechas_kpi) == 2:
             fi, ff = rango_fechas_kpi
@@ -476,143 +506,102 @@ if tab_kpis:
             if f_alm != "Todos": df_logs_filtrado = df_logs_filtrado[df_logs_filtrado['Almacén_Destino'] == f_alm]
             if f_usr != "Todos": df_logs_filtrado = df_logs_filtrado[df_logs_filtrado['Usuario'] == f_usr]
 
-        # --- METRICAS DE CABECERA ---
         c_creados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'CREACIÓN']) if not df_logs_filtrado.empty else 0
         c_actualizados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'MODIFICACIÓN']) if not df_logs_filtrado.empty else 0
         c_eliminados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'ELIMINACIÓN']) if not df_logs_filtrado.empty else 0
 
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Total Movimientos", len(df_logs_filtrado))
+        m1.metric("Movimientos Período", len(df_logs_filtrado))
         m2.metric("✨ Creados", c_creados)
         m3.metric("✏️ Modificados", c_actualizados)
         m4.metric("🗑️ Eliminados", c_eliminados)
         st.markdown("---")
 
-        # --- FILA 1 DE GRÁFICOS: ESTADO ACTUAL DE LA PLANTA ---
-        st.markdown("#### 🏭 Estado Actual de la Base Activa")
-        col_g1, col_g2 = st.columns(2)
-        
-        with col_g1:
-            st.markdown("##### Cantidad de Códigos K por Puesto de Trabajo Destino")
+        g_col1, g_col2 = st.columns(2)
+        with g_col1:
+            st.markdown("##### 🏭 Top Puestos de Trabajo Destino")
             df_puestos = df_k_live['Puesto de trabajo destino'].value_counts().reset_index()
             df_puestos.columns = ['Puesto Destino', 'Cantidad']
-            fig_puestos = px.bar(
-                df_puestos.head(10), 
-                x='Cantidad', 
-                y='Puesto Destino', 
-                orientation='h', 
-                text='Cantidad', 
-                template="plotly_dark", 
-                color='Cantidad', 
-                color_continuous_scale='Reds'
-            )
+            fig_puestos = px.bar(df_puestos.head(10), x='Cantidad', y='Puesto Destino', orientation='h', text='Cantidad', template="plotly_dark", color='Cantidad', color_continuous_scale='Reds')
             fig_puestos.update_layout(yaxis={'categoryorder': 'total ascending'}, height=320, margin=dict(l=20, r=20, t=20, b=20))
             st.plotly_chart(fig_puestos, use_container_width=True)
 
-        with col_g2:
-            st.markdown("##### Cantidad de Códigos K por Medio Físico")
-            df_medios = df_k_live['Medio'].value_counts().reset_index()
-            df_medios.columns = ['Medio', 'Cantidad']
-            fig_medios = px.pie(
-                df_medios, 
-                names='Medio', 
-                values='Cantidad', 
-                hole=0.4, 
-                template="plotly_dark",
-                color_discrete_sequence=px.colors.qualitative.Pastel
-            )
-            fig_medios.update_layout(height=320, margin=dict(l=20, r=20, t=20, b=20))
-            st.plotly_chart(fig_medios, use_container_width=True)
-
-        st.markdown("---")
-
-        # --- FILA 2 DE GRÁFICOS: ANÁLISIS DE CAMBIOS Y MODIFICACIONES ---
-        st.markdown("#### 🔄 Análisis Histórico de Operaciones y Cambios")
-        
-        if not df_logs_filtrado.empty:
-            col_g3, col_g4 = st.columns(2)
-            
-            with col_g3:
-                st.markdown("##### Proporción de Tipos de Operación")
-                df_acciones = df_logs_filtrado['Acción'].value_counts().reset_index()
-                df_acciones.columns = ['Acción', 'Cantidad']
-                
-                mapa_colores_accion = {
-                    'CREACIÓN': '#10b981', 
-                    'MODIFICACIÓN': '#f59e0b', 
-                    'ELIMINACIÓN': '#ef4444'
-                }
-                
-                fig_donut_acciones = px.pie(
-                    df_acciones, 
-                    names='Acción', 
-                    values='Cantidad', 
-                    hole=0.5, 
-                    template="plotly_dark",
-                    color='Acción',
-                    color_discrete_map=mapa_colores_accion
-                )
-                fig_donut_acciones.update_traces(textinfo='percent+label')
-                fig_donut_acciones.update_layout(height=320, margin=dict(l=20, r=20, t=20, b=20))
-                st.plotly_chart(fig_donut_acciones, use_container_width=True)
-
-            with col_g4:
-                st.markdown("##### Evolución Diaria por Tipo de Acción")
+        with g_col2:
+            st.markdown("##### 📈 Evolución de Movimientos")
+            if not df_logs_filtrado.empty:
                 df_logs_filtrado['Fecha_Dia'] = df_logs_filtrado['Fecha_dt'].dt.strftime('%Y-%m-%d')
-                df_evol = df_logs_filtrado.groupby(['Fecha_Dia', 'Acción']).size().reset_index(name='Cantidad')
-                
-                fig_evol = px.line(
-                    df_evol, 
-                    x='Fecha_Dia', 
-                    y='Cantidad', 
-                    color='Acción', 
-                    markers=True, 
-                    template="plotly_dark",
-                    color_discrete_map=mapa_colores_accion
-                )
+                df_evolucion = df_logs_filtrado.groupby(['Fecha_Dia', 'Acción']).size().reset_index(name='Cantidad')
+                fig_evol = px.line(df_evolucion, x='Fecha_Dia', y='Cantidad', color='Acción', markers=True, template="plotly_dark", color_discrete_map={'CREACIÓN': '#10b981', 'MODIFICACIÓN': '#f59e0b', 'ELIMINACIÓN': '#ef4444'})
                 fig_evol.update_layout(height=320, margin=dict(l=20, r=20, t=20, b=20), xaxis_title="Fecha", yaxis_title="Operaciones")
                 st.plotly_chart(fig_evol, use_container_width=True)
+            else:
+                st.info("Sin registros en este rango.")
 
-            # --- FILA 3: OPERACIONES POR PUESTO Y ACTIVIDAD POR USUARIO ---
-            col_g5, col_g6 = st.columns(2)
-            
-            with col_g5:
-                st.markdown("##### Tipo de Acción por Puesto Destino (Top 10)")
-                df_puesto_accion = df_logs_filtrado.groupby(['Puesto_Destino', 'Acción']).size().reset_index(name='Cantidad')
-                top_puestos_list = df_logs_filtrado['Puesto_Destino'].value_counts().head(10).index.tolist()
-                df_puesto_accion = df_puesto_accion[df_puesto_accion['Puesto_Destino'].isin(top_puestos_list)]
-                
-                fig_stack = px.bar(
-                    df_puesto_accion, 
-                    x='Cantidad', 
-                    y='Puesto_Destino', 
-                    color='Acción', 
-                    orientation='h', 
-                    template="plotly_dark",
-                    color_discrete_map=mapa_colores_accion
-                )
-                fig_stack.update_layout(yaxis={'categoryorder': 'total ascending'}, height=320, margin=dict(l=20, r=20, t=20, b=20))
-                st.plotly_chart(fig_stack, use_container_width=True)
-
-            with col_g6:
-                st.markdown("##### Movimientos Registrados por Usuario")
-                df_usr_act = df_logs_filtrado['Usuario'].value_counts().reset_index()
-                df_usr_act.columns = ['Usuario', 'Cantidad']
-                
-                fig_usr = px.bar(
-                    df_usr_act.head(8), 
-                    x='Usuario', 
-                    y='Cantidad', 
-                    text='Cantidad',
-                    template="plotly_dark", 
-                    color='Cantidad', 
-                    color_continuous_scale='Blues'
-                )
-                fig_usr.update_layout(height=320, margin=dict(l=20, r=20, t=20, b=20), xaxis_title="Usuario", yaxis_title="Operaciones")
-                st.plotly_chart(fig_usr, use_container_width=True)
-
+# ==========================================
+# VISTA: TRACKER DE EJECUCIÓN LOGÍSTICA
+# ==========================================
+tab_tracker = obtener_tab("🚚 Tracker de Ejecución Logística") or obtener_tab("🚚 Estado de Solicitudes")
+if tab_tracker:
+    with tab_tracker:
+        st.subheader("🚚 Cola de Ejecución Logística & Estado SAP / Impresión")
+        st.write("Gestiona la confirmación de carga en SAP, impresión física y entrega en puesto de trabajo.")
+        
+        df_tr = cargar_tracker()
+        
+        if df_tr.empty:
+            st.info("No hay solicitudes de actualización pendientes en la cola.")
         else:
-            st.info("ℹ️ No hay registros suficientes en el historial para mostrar el análisis de cambios en el período seleccionado.")
+            filtro_est = st.radio("Filtrar Solicitudes:", ["Pendientes (Incompletas)", "Todas las Solicitudes", "Finalizadas"], horizontal=True)
+            df_tr_show = df_tr.copy()
+            if filtro_est == "Pendientes (Incompletas)":
+                df_tr_show = df_tr_show[df_tr_show['Estado_Fisico'] != 'Entregado']
+            elif filtro_est == "Finalizadas":
+                df_tr_show = df_tr_show[df_tr_show['Estado_Fisico'] == 'Entregado']
+
+            st.dataframe(df_tr_show, use_container_width=True)
+            
+            if rol_actual in ["Logistica", "Procesos"]:
+                st.markdown("---")
+                st.subheader("⚡ Actualizar Estado de Solicitud (Logística)")
+                
+                sol_ids = df_tr_show['ID_Solicitud'].tolist() if not df_tr_show.empty else []
+                if sol_ids:
+                    col_tr1, col_tr2, col_tr3 = st.columns(3)
+                    with col_tr1:
+                        sol_sel = st.selectbox("Seleccione ID Solicitud a actualizar:", sol_ids)
+                        row_tr = df_tr[df_tr['ID_Solicitud'] == sol_sel].iloc[0]
+                        st.caption(f"**Material:** {row_tr['Material']} | **Código K:** {row_tr['Código_K']} | **Acción:** {row_tr['Acción_Requerida']}")
+
+                    with col_tr2:
+                        chk_sap = st.checkbox("Cargado en SAP", value=(str(row_tr['Cargado_SAP']) == 'SI'))
+                        chk_imp = st.checkbox("Impreso", value=(str(row_tr['Impreso']) == 'SI'))
+                        
+                    with col_tr3:
+                        curr_est = str(row_tr['Estado_Fisico'])
+                        idx_est = ["Pendiente", "En Proceso", "Entregado"].index(curr_est) if curr_est in ["Pendiente", "En Proceso", "Entregado"] else 0
+                        est_fisico = st.selectbox("Estado Físico en Puesto:", ["Pendiente", "En Proceso", "Entregado"], index=idx_est)
+                        obs_tr = st.text_input("Observaciones:", value=str(row_tr['Observación'] if row_tr['Observación'] != '-' else ''))
+
+                    if st.button("💾 Actualizar Estado de Solicitud", type="primary"):
+                        idx_tr = df_tr[df_tr['ID_Solicitud'] == sol_sel].index[0]
+                        now_str = datetime.now(ARG_TZ).strftime("%Y-%m-%d")
+                        
+                        df_tr = df_tr.astype(object)
+                        
+                        df_tr.loc[idx_tr, 'Cargado_SAP'] = "SI" if chk_sap else "NO"
+                        df_tr.loc[idx_tr, 'Impreso'] = "SI" if chk_imp else "NO"
+                        if chk_imp and str(df_tr.loc[idx_tr, 'Fecha_Impresion']) in ["-", "None", "nan", ""]:
+                            df_tr.loc[idx_tr, 'Fecha_Impresion'] = now_str
+                            
+                        df_tr.loc[idx_tr, 'Estado_Fisico'] = str(est_fisico)
+                        if est_fisico == "Entregado" and str(df_tr.loc[idx_tr, 'Fecha_Finalizacion']) in ["-", "None", "nan", ""]:
+                            df_tr.loc[idx_tr, 'Fecha_Finalizacion'] = now_str
+                            
+                        df_tr.loc[idx_tr, 'Observación'] = str(obs_tr) if obs_tr.strip() else "-"
+                        guardar_tracker(df_tr)
+                        st.success(f"✅ Solicitud **{sol_sel}** actualizada con éxito.")
+                        st.rerun()
+
 # ==========================================
 # VISTA: CREAR KANBAN
 # ==========================================
@@ -782,7 +771,7 @@ if tab_mod:
                 st.rerun()
 
 # ==========================================
-# VISTAS GENERALES: CONSULTA / EXPORTAR / LOGS
+# VISTAS GENERALES: CONSULTA / EXPORTAR / LOGS / PERFIL
 # ==========================================
 tab_consulta = obtener_tab("📋 Consulta General")
 if tab_consulta:
@@ -826,3 +815,55 @@ if tab_historial:
                     limpiar_historiales_de_prueba()
                     st.success("✅ Historiales y Tracker limpiados correctamente. ¡El sistema está listo para el arranque!")
                     st.rerun()
+
+# ==========================================
+# VISTA NUEVA: MI PERFIL Y GESTIÓN DE CUENTA
+# ==========================================
+tab_perfil = obtener_tab("👤 Mi Perfil")
+if tab_perfil:
+    with tab_perfil:
+        st.subheader("👤 Mi Perfil de Usuario")
+        usr_actual = st.session_state['usuario_email']
+        
+        col_p1, col_p2 = st.columns([1, 2])
+        
+        with col_p1:
+            st.markdown('<div class="card-container">', unsafe_allow_html=True)
+            st.markdown("#### 📄 Datos de la Cuenta")
+            st.write(f"**Usuario / Correo:** {usr_actual}")
+            st.write(f"**Rol Asignado:** `{rol_actual.upper()}`")
+            st.write(f"**Dominio:** Crucianelli S.A.")
+            st.write(f"**Último Acceso:** {obtener_fecha_hora_arg()}")
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # Formulario para cambiar contraseña local
+            with st.expander("🔑 Cambiar Contraseña Directa"):
+                pass_curr = st.text_input("Contraseña Actual:", type="password", key="p_curr")
+                pass_new1 = st.text_input("Nueva Contraseña:", type="password", key="p_new1")
+                pass_new2 = st.text_input("Confirmar Nueva Contraseña:", type="password", key="p_new2")
+                
+                if st.button("💾 Actualizar Contraseña"):
+                    if not pass_curr or not pass_new1 or not pass_new2:
+                        st.error("❌ Complete todos los campos.")
+                    elif pass_new1 != pass_new2:
+                        st.error("❌ Las nuevas contraseñas no coinciden.")
+                    elif USUARIOS_REGISTRADOS.get(usr_actual, {}).get("pass") != pass_curr:
+                        st.error("❌ La contraseña actual es incorrecta.")
+                    else:
+                        USUARIOS_REGISTRADOS[usr_actual]["pass"] = pass_new1
+                        guardar_usuarios(USUARIOS_REGISTRADOS)
+                        st.success("✅ ¡Contraseña actualizada con éxito!")
+
+        with col_p2:
+            st.markdown("#### 📜 Mi Historial de Actividad Reciente")
+            df_logs_all = cargar_logs()
+            if not df_logs_all.empty:
+                df_my_logs = df_logs_all[df_logs_all['Usuario'] == usr_actual].sort_values(by="Fecha_Hora", ascending=False)
+                if not df_my_logs.empty:
+                    st.dataframe(df_my_logs, use_container_width=True)
+                else:
+                    st.info("Aún no has registrado movimientos (creaciones, modificaciones o bajas) en el sistema.")
+            else:
+                st.info("No existen registros en el historial.")
