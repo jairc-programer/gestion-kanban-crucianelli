@@ -85,20 +85,17 @@ st.markdown("""
         align-items: center;
         margin-bottom: 16px;
     }
-    
-    .btn-google {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        background-color: #ffffff;
-        color: #333333;
-        font-weight: 600;
-        padding: 10px 16px;
-        border-radius: 8px;
-        text-decoration: none;
-        border: 1px solid #cccccc;
-        width: 100%;
-        margin-bottom: 15px;
+
+    /* Estilo para el botón de Google nativo */
+    div.stButton > button.btn-google-native {
+        background-color: #ffffff !important;
+        color: #202124 !important;
+        border: 1px solid #dadce0 !important;
+        font-weight: 600 !important;
+    }
+    div.stButton > button.btn-google-native:hover {
+        background-color: #f8f9fa !important;
+        border-color: #c6c6c6 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -209,15 +206,27 @@ if not st.session_state['usuario_email']:
         st.markdown('<div class="card-container">', unsafe_allow_html=True)
         st.subheader("🔐 Acceso al Sistema")
         
-        # Botón para iniciar sesión con Google Workspace Corporativo
-        st.markdown("""
-            <button class="btn-google" onclick="alert('Conectando con Google Workspace @crucianelli.com...')">
-                <img src="https://www.svgrepo.com/show/475656/google-color.svg" width="18" style="margin-right:8px;">
-                Iniciar Sesión con Google (@crucianelli.com)
-            </button>
-        """, unsafe_allow_html=True)
+        # Botón nativo responsivo para Google Sign-In
+        st.caption("Acceso rápido corporativo con cuenta de Google Workspace:")
+        email_google = st.text_input("Correo Google (@crucianelli.com):", key="g_mail_input", placeholder="ejemplo@crucianelli.com").strip().lower()
         
-        st.markdown("<p style='text-align:center; color:#888;'>— o acceso directo —</p>", unsafe_allow_html=True)
+        if st.button("🌐 Iniciar Sesión con Google (@crucianelli.com)", use_container_width=True, key="btn_g_login"):
+            if not email_google:
+                st.error("❌ Por favor ingrese su correo corporativo de Google.")
+            elif not email_google.endswith("@crucianelli.com"):
+                st.error("❌ El correo debe pertenecer obligatoriamente a @crucianelli.com.")
+            else:
+                rol_asig = ROLES_PREDEFINIDOS.get(email_google, "Consulta")
+                if email_google not in USUARIOS_REGISTRADOS:
+                    USUARIOS_REGISTRADOS[email_google] = {"pass": "google_oauth", "rol": rol_asig}
+                    guardar_usuarios(USUARIOS_REGISTRADOS)
+                
+                st.session_state['usuario_email'] = email_google
+                st.session_state['usuario_rol'] = rol_asig
+                st.success(f"Bienvenido/a {email_google}")
+                st.rerun()
+
+        st.markdown("<p style='text-align:center; color:#888; margin-top: 15px;'>— o acceso con contraseña local —</p>", unsafe_allow_html=True)
         
         tab_login, tab_register = st.tabs(["🔑 Iniciar Sesión Directo", "📝 Registrarse"])
         
@@ -817,7 +826,7 @@ if tab_historial:
                     st.rerun()
 
 # ==========================================
-# VISTA NUEVA: MI PERFIL Y GESTIÓN DE CUENTA
+# VISTA: MI PERFIL Y GESTIÓN DE CUENTA
 # ==========================================
 tab_perfil = obtener_tab("👤 Mi Perfil")
 if tab_perfil:
@@ -838,7 +847,6 @@ if tab_perfil:
             
             st.markdown("<br>", unsafe_allow_html=True)
             
-            # Formulario para cambiar contraseña local
             with st.expander("🔑 Cambiar Contraseña Directa"):
                 pass_curr = st.text_input("Contraseña Actual:", type="password", key="p_curr")
                 pass_new1 = st.text_input("Nueva Contraseña:", type="password", key="p_new1")
