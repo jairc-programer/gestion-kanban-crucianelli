@@ -612,7 +612,7 @@ if tab_tracker:
                         st.rerun()
 
 # ==========================================
-# VISTA: CREAR KANBAN
+# VISTA: CREAR KANBAN (VALIDACIÓN PP < REPO)
 # ==========================================
 tab_crear = obtener_tab("➕ Crear Nuevo Kanban")
 if tab_crear:
@@ -638,13 +638,29 @@ if tab_crear:
 
         with col3:
             cant_repo = st.number_input("Cantidad Reposición", min_value=0.0, value=float(pkg_sugerido or 0.0), step=1.0)
-            cant_pp = st.number_input("Cantidad Punto Pedido", value=cant_repo, disabled=True) if tipo_soporte == "GAVETA" else st.number_input("Cantidad Punto Pedido", min_value=0.0, step=1.0)
+            
+            # --- CONTROL Y VALIDACIÓN DE PUNTO DE PEDIDO ---
+            if tipo_soporte == "GAVETA":
+                cant_pp = st.number_input("Cantidad Punto Pedido", value=cant_repo, disabled=True, help="En GAVETA, la cantidad de reposición y punto de pedido coinciden.")
+            else:
+                max_pp_permitido = max(0.0, cant_repo - 1.0) if cant_repo > 0 else 0.0
+                cant_pp = st.number_input(
+                    "Cantidad Punto Pedido", 
+                    min_value=0.0, 
+                    max_value=max_pp_permitido,
+                    value=min(float(cant_pp if 'cant_pp' in locals() else 0.0), max_pp_permitido),
+                    step=1.0,
+                    help="⚠️ En TARJETA, el Punto de Pedido debe ser estrictamente menor a la Cantidad de Reposición."
+                )
+
             unidad = st.selectbox("Unidad Base", ["UN", "M", "L", "KG"])
             dias_prep = st.number_input("Tiempo Preparación / Días", min_value=0, value=1)
 
         if st.button("💾 Guardar y Crear Kanban", type="primary"):
             if not material or puesto_destino in ["-- Seleccionar --", ""]:
                 st.error("❌ Material y Puesto Destino obligatorios.")
+            elif tipo_soporte == "TARJETA" and cant_pp >= cant_repo:
+                st.error(f"❌ Error Logístico: En Kanbans tipo TARJETA, el Punto de Pedido ({cant_pp}) debe ser estrictamente MENOR que la Cantidad de Reposición ({cant_repo}).")
             else:
                 fecha_actual = obtener_fecha_hora_arg()
                 usr_act = st.session_state['usuario_email']
@@ -679,7 +695,6 @@ if tab_crear:
                 st.success(f"✅ ¡Kanban **{codigo_k_nuevo}** creado exitosamente! Registrado en todas las pestañas.")
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
-
 # ==========================================
 # VISTA: MODIFICAR Y ELIMINAR
 # ==========================================
