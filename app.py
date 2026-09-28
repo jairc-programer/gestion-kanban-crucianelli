@@ -86,7 +86,6 @@ st.markdown("""
         margin-bottom: 16px;
     }
 
-    /* Estilo para el botón de Google nativo */
     div.stButton > button.btn-google-native {
         background-color: #ffffff !important;
         color: #202124 !important;
@@ -206,7 +205,6 @@ if not st.session_state['usuario_email']:
         st.markdown('<div class="card-container">', unsafe_allow_html=True)
         st.subheader("🔐 Acceso al Sistema")
         
-        # Botón nativo responsivo para Google Sign-In
         st.caption("Acceso rápido corporativo con cuenta de Google Workspace:")
         email_google = st.text_input("Correo Google (@crucianelli.com):", key="g_mail_input", placeholder="ejemplo@crucianelli.com").strip().lower()
         
@@ -612,7 +610,7 @@ if tab_tracker:
                         st.rerun()
 
 # ==========================================
-# VISTA: CREAR KANBAN (VALIDACIÓN PP < REPO)
+# VISTA: CREAR KANBAN (CONTROLES ESTRICTOS Y UNICIDAD)
 # ==========================================
 tab_crear = obtener_tab("➕ Crear Nuevo Kanban")
 if tab_crear:
@@ -639,7 +637,7 @@ if tab_crear:
         with col3:
             cant_repo = st.number_input("Cantidad Reposición", min_value=0.0, value=float(pkg_sugerido or 0.0), step=1.0)
             
-            # --- CONTROL Y VALIDACIÓN DE PUNTO DE PEDIDO ---
+            # Control de Punto de Pedido
             if tipo_soporte == "GAVETA":
                 cant_pp = st.number_input("Cantidad Punto Pedido", value=cant_repo, disabled=True, help="En GAVETA, la cantidad de reposición y punto de pedido coinciden.")
             else:
@@ -648,24 +646,43 @@ if tab_crear:
                     "Cantidad Punto Pedido", 
                     min_value=0.0, 
                     max_value=max_pp_permitido,
-                    value=min(float(cant_pp if 'cant_pp' in locals() else 0.0), max_pp_permitido),
+                    value=0.0,
                     step=1.0,
-                    help="⚠️ En TARJETA, el Punto de Pedido debe ser estrictamente menor a la Cantidad de Reposición."
+                    help="🚫 Prohibido: En TARJETA, el Punto de Pedido debe ser estrictamente menor a la Cantidad de Reposición."
                 )
 
             unidad = st.selectbox("Unidad Base", ["UN", "M", "L", "KG"])
             dias_prep = st.number_input("Tiempo Preparación / Días", min_value=0, value=1)
 
         if st.button("💾 Guardar y Crear Kanban", type="primary"):
+            df_curr = obtener_base_kanbans()
+            
+            # --- VALIDACIÓN 1: CAMPOS OBLIGATORIOS ---
             if not material or puesto_destino in ["-- Seleccionar --", ""]:
-                st.error("❌ Material y Puesto Destino obligatorios.")
+                st.error("❌ Error: Código de Material y Puesto Destino son campos obligatorios.")
+            
+            # --- VALIDACIÓN 2: LÓGICA LOGÍSTICA PUNTO DE PEDIDO < REPOSICIÓN ---
             elif tipo_soporte == "TARJETA" and cant_pp >= cant_repo:
-                st.error(f"❌ Error Logístico: En Kanbans tipo TARJETA, el Punto de Pedido ({cant_pp}) debe ser estrictamente MENOR que la Cantidad de Reposición ({cant_repo}).")
+                st.error(f"🚫 PROHIBIDO: En Kanbans tipo TARJETA, el Punto de Pedido ({cant_pp}) DEBE SER MENOR a la Cantidad de Reposición ({cant_repo}).")
+            
+            # --- VALIDACIÓN 3: REGLA DE UNICIDAD (MATERIAL + PUESTO DESTINO) ---
+            elif not df_curr.empty and len(
+                df_curr[
+                    (df_curr['Material'].astype(str).str.strip().str.upper() == material) & 
+                    (df_curr['Puesto de trabajo destino'].astype(str).str.strip().str.upper() == puesto_destino.upper())
+                ]
+            ) > 0:
+                kb_existente = df_curr[
+                    (df_curr['Material'].astype(str).str.strip().str.upper() == material) & 
+                    (df_curr['Puesto de trabajo destino'].astype(str).str.strip().str.upper() == puesto_destino.upper())
+                ].iloc[0]['N° Etiquetas']
+                
+                st.error(f"🚫 REGISTRO DUPLICADO PROHIBIDO: Ya existe un Kanban activo (**{kb_existente}**) para el Material **{material}** en el Puesto **{puesto_destino}**. Modifique el existente o elija otro puesto.")
+            
+            # --- GUARDA SÓLO SI PASA TODAS LAS VALIDACIONES ---
             else:
                 fecha_actual = obtener_fecha_hora_arg()
                 usr_act = st.session_state['usuario_email']
-                df_curr = obtener_base_kanbans()
-                
                 codigo_k_nuevo = obtener_siguiente_codigo_k(df_curr)
                 
                 nuevo_reg = {
@@ -692,11 +709,12 @@ if tab_crear:
                 
                 registrar_log("CREO", codigo_k_nuevo, material, medio_str, almacen_destino, puesto_destino, usr_act)
                 crear_solicitud_tracker(material, codigo_k_nuevo, tipo_etiqueta_sap, puesto_destino, medio_str, "CÓDIGO NUEVO", "ARMAR PEDIDO", usr_act)
-                st.success(f"✅ ¡Kanban **{codigo_k_nuevo}** creado exitosamente! Registrado en todas las pestañas.")
+                st.success(f"✅ ¡Kanban **{codigo_k_nuevo}** creado exitosamente! Registrado y sincronizado.")
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
+
 # ==========================================
-# VISTA: MODIFICAR Y ELIMINAR
+# VISTA: MODIFICAR Y ELIMINAR (VALIDACIÓN DE REGISTRO)
 # ==========================================
 tab_mod = obtener_tab("✏️ Modificar y Eliminar")
 if tab_mod:
@@ -742,29 +760,37 @@ if tab_mod:
 
                     with m_col3:
                         m_cant_repo = st.number_input("Cantidad Reposición", min_value=0.0, value=float(row['Cantidad Reposicion'] or 0.0), key="m_cant_r")
-                        m_cant_pp = st.number_input("Cantidad Punto Pedido", value=m_cant_repo, disabled=True, key="m_cant_p_g") if m_tipo_soporte == "GAVETA" else st.number_input("Cantidad Punto Pedido", min_value=0.0, value=float(row['Cantidad Punto de Pedido'] or 0.0), key="m_cant_p_t")
+                        
+                        if m_tipo_soporte == "GAVETA":
+                            m_cant_pp = st.number_input("Cantidad Punto Pedido", value=m_cant_repo, disabled=True, key="m_cant_p_g")
+                        else:
+                            max_m_pp = max(0.0, m_cant_repo - 1.0) if m_cant_repo > 0 else 0.0
+                            m_cant_pp = st.number_input("Cantidad Punto Pedido", min_value=0.0, max_value=max_m_pp, value=min(float(row['Cantidad Punto de Pedido'] or 0.0), max_m_pp), key="m_cant_p_t")
 
                     if st.button("💾 Guardar Cambios", type="primary"):
-                        usr_act = st.session_state['usuario_email']
-                        idx = df_live[df_live['N° Etiquetas'] == k_sel].index[0]
-                        
-                        df_live.loc[idx, 'Tipo Kanban'] = m_tipo_soporte
-                        df_live.loc[idx, 'Medio'] = m_medio_str
-                        df_live.loc[idx, 'Almacén Origen'] = m_almacen_origen
-                        df_live.loc[idx, 'Almacen Destino'] = m_almacen_destino
-                        df_live.loc[idx, 'Puesto de trabajo destino'] = m_puesto_destino
-                        df_live.loc[idx, 'Cantidad Reposicion'] = m_cant_repo
-                        df_live.loc[idx, 'Cantidad Punto de Pedido'] = m_cant_pp
-                        df_live.loc[idx, 'Fecha Modificación'] = obtener_fecha_hora_arg()
-                        df_live.loc[idx, 'Usuario Modificación'] = usr_act
-                        
-                        mat_mod = str(df_live.loc[idx, 'Material'])
-                        actualizar_base_kanbans(df_live)
-                        
-                        registrar_log("ACTUALIZO", k_sel, mat_mod, m_medio_str, m_almacen_destino, m_puesto_destino, usr_act)
-                        crear_solicitud_tracker(mat_mod, k_sel, df_live.loc[idx, 'Tipo Etiqueta'], m_puesto_destino, m_medio_str, "ACTUALIZACIÓN", "IMPRIMIR / REEMPLAZAR", usr_act)
-                        st.success(f"✅ Kanban **{k_sel}** actualizado. Cambios sincronizados.")
-                        st.rerun()
+                        if m_tipo_soporte == "TARJETA" and m_cant_pp >= m_cant_repo:
+                            st.error(f"🚫 PROHIBIDO: En Kanbans tipo TARJETA, el Punto de Pedido ({m_cant_pp}) DEBE SER MENOR a la Cantidad de Reposición ({m_cant_repo}).")
+                        else:
+                            usr_act = st.session_state['usuario_email']
+                            idx = df_live[df_live['N° Etiquetas'] == k_sel].index[0]
+                            
+                            df_live.loc[idx, 'Tipo Kanban'] = m_tipo_soporte
+                            df_live.loc[idx, 'Medio'] = m_medio_str
+                            df_live.loc[idx, 'Almacén Origen'] = m_almacen_origen
+                            df_live.loc[idx, 'Almacen Destino'] = m_almacen_destino
+                            df_live.loc[idx, 'Puesto de trabajo destino'] = m_puesto_destino
+                            df_live.loc[idx, 'Cantidad Reposicion'] = m_cant_repo
+                            df_live.loc[idx, 'Cantidad Punto de Pedido'] = m_cant_pp
+                            df_live.loc[idx, 'Fecha Modificación'] = obtener_fecha_hora_arg()
+                            df_live.loc[idx, 'Usuario Modificación'] = usr_act
+                            
+                            mat_mod = str(df_live.loc[idx, 'Material'])
+                            actualizar_base_kanbans(df_live)
+                            
+                            registrar_log("ACTUALIZO", k_sel, mat_mod, m_medio_str, m_almacen_destino, m_puesto_destino, usr_act)
+                            crear_solicitud_tracker(mat_mod, k_sel, df_live.loc[idx, 'Tipo Etiqueta'], m_puesto_destino, m_medio_str, "ACTUALIZACIÓN", "IMPRIMIR / REEMPLAZAR", usr_act)
+                            st.success(f"✅ Kanban **{k_sel}** actualizado. Cambios sincronizados.")
+                            st.rerun()
                 else:
                     st.warning(f"⚠️ No se encontraron Kanbans registrados para: **{busqueda}**")
 
