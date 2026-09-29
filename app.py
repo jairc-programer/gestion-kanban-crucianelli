@@ -1162,6 +1162,7 @@ if tab_crear:
 tab_mod = obtener_tab("✏️ Modificar y Eliminar")
 if tab_mod:
     with tab_mod:
+        # Nota: debes dejar al menos 4 espacios de sangría en las líneas dentro de with tab_mod:
         st.subheader("✏️ Modificación o Eliminación de Kanban")
         # Coloca aquí todo el código original correspondiente a esta pestaña, respetando la sangría (4 espacios/1 tab).
 # ==========================================
