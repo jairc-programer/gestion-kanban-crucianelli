@@ -103,7 +103,8 @@ def obtener_fecha_hora_arg():
 
 DB_FILE = "TablaZ.xlsx"
 LIVE_DB_FILE = "TablaZ_live.csv"
-PKG_FILE = "Lote packaging.xlsx"
+PKG_FILE_EXCEL = "Lotes packaing.xlsx"
+PKG_FILE_ALT = "Lote packaging.xlsx"
 LOG_FILE = "historial_cambios.csv"
 TRACKER_FILE = "tracker_ejecucion.csv"
 USERS_FILE = "usuarios.json"
@@ -332,12 +333,18 @@ def actualizar_base_kanbans(nuevo_df):
         pass
 
 def cargar_packaging():
-    if os.path.exists(PKG_FILE):
+    target_file = None
+    if os.path.exists(PKG_FILE_EXCEL):
+        target_file = PKG_FILE_EXCEL
+    elif os.path.exists(PKG_FILE_ALT):
+        target_file = PKG_FILE_ALT
+
+    if target_file:
         try:
-            df = pd.read_excel(PKG_FILE)
+            df = pd.read_excel(target_file)
             df.columns = [str(c).strip() for c in df.columns]
             
-            # Identificar columna del código de material
+            # Identificar columna de material
             col_mat = next((c for c in df.columns if c.upper() in ['MATERIAL', 'CODIGO', 'CÓDIGO', 'MATERIALES']), df.columns[0])
             df[col_mat] = df[col_mat].astype(str).str.strip().str.upper()
             
@@ -345,7 +352,7 @@ def cargar_packaging():
             for _, r in df.iterrows():
                 mat = r[col_mat]
                 
-                # Obtención de Medio / Packaging
+                # Obtención de Medio
                 medio_val = ""
                 for c_med in ['Packaging', 'Packaing', 'Medio', 'Soporte', 'Envase']:
                     if c_med in df.columns and pd.notna(r[c_med]):
@@ -359,7 +366,7 @@ def cargar_packaging():
                         unid_val = str(r[c_uni]).strip().upper()
                         break
 
-                # Obtención de Lote / Cantidad de Packaging
+                # Obtención de Lote
                 cant_val = None
                 for c_cant in ['Lote Packaging', 'Lote packaging', 'Lote Packaging ', 'Lote', 'Cantidad', 'Cantidad Reposicion', 'Cant', 'Lote de Reposicion', 'Tamaño Lote']:
                     if c_cant in df.columns and pd.notna(r[c_cant]):
@@ -850,7 +857,7 @@ if tab_tracker:
                             col_b1, col_b2 = st.columns(2)
                             with col_b1:
                                 if estado_actual != "En Proceso" and estado_actual != "Entregado":
-                                    if st.button("▶️️ En Proceso", key=f"btn_proc_{sol_id}"):
+                                    if st.button("▶ En Proceso", key=f"btn_proc_{sol_id}"):
                                         df_tr.loc[df_tr['ID_Solicitud'] == sol_id, 'Estado_Fisico'] = 'En Proceso'
                                         guardar_tracker(df_tr)
                                         st.rerun()
@@ -908,7 +915,7 @@ if tab_crear:
                         cant_fmt = int(cant_pkg_sugerida) if cant_pkg_sugerida == int(cant_pkg_sugerida) else cant_pkg_sugerida
                         st.info(f"📦 El código **{material_input}** tiene **{cant_fmt}** de Lote de Packaging.")
                     else:
-                        st.caption(f"ℹ️ Material encontrado en packaging sin lote definido: **UM Base:** {um_sugerida}")
+                        st.caption(f"ℹ️️ Material encontrado en packaging sin lote definido: **UM Base:** {um_sugerida}")
                 else:
                     st.caption("ℹ️ El código de material no se encuentra en el archivo de Packaging. Se usarán valores por defecto.")
 
@@ -1012,7 +1019,7 @@ if tab_crear:
 # ==========================================
 # VISTA: MODIFICAR Y ELIMINAR (PROCESOS)
 # ==========================================
-tab_mod = obtener_tab("✏️️ Modificar y Eliminar")
+tab_mod = obtener_tab("✏ Modificar y Eliminar")
 if tab_mod:
     with tab_mod:
         st.subheader("✏ Modificación y Eliminación de Kanbans")
