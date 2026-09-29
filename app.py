@@ -190,7 +190,7 @@ ALMACENES_PUESTOS = {
 
 LISTA_ALMACENES = list(ALMACENES_PUESTOS.keys())
 OPCIONES_SOPORTE_TARJETA = ["SIN MEDIO DEFINIDO", "PALLET CHICO", "PALLET GRANDE", "CANASTO", "CAPACHO CHICO", "CAPACHO GRANDE", "RACK"]
-OPCIONES_GAVETA = ["GAVETA S", "GAVETA M", "GAVETA L", "GAVETA XL", "S", "M", "L", "XL"]
+OPCIONES_GAVETA = ["S", "M", "L", "XL"]
 
 if 'usuario_email' not in st.session_state:
     st.session_state['usuario_email'] = None
@@ -340,8 +340,8 @@ def cargar_packaging():
             for _, r in df.iterrows():
                 mat = r['Material']
                 medio_val = str(r.get('Packaging', r.get('Packaing', r.get('Medio', '')))).strip()
-                unid_val = str(r.get('Unidad', r.get('UM', r.get('Unidad Reposicion', 'ST')))).strip().upper()
-                dict_pkg[mat] = {"medio": medio_val, "unidad": unid_val if unid_val != 'NAN' else 'ST'}
+                unid_val = str(r.get('Unidad', r.get('UM', r.get('Unidad Reposicion', 'UN')))).strip().upper()
+                dict_pkg[mat] = {"medio": medio_val, "unidad": unid_val if unid_val != 'NAN' else 'UN'}
             return dict_pkg
         except Exception:
             return {}
