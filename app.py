@@ -255,7 +255,7 @@ if not st.session_state['usuario_email']:
     st.stop()
 
 # ==========================================
-# MANEJO CENTRALIZADO DE BASE EN VIVO
+# MANEJO CENTRALIZADO Y SINCRONIZADO EN VIVO
 # ==========================================
 def cargar_base_desde_disco():
     if os.path.exists(DB_FILE):
@@ -283,10 +283,9 @@ def cargar_base_desde_disco():
             return pd.DataFrame(columns=COLUMNS)
     return pd.DataFrame(columns=COLUMNS)
 
-if 'df_kanbans_global' not in st.session_state:
-    st.session_state['df_kanbans_global'] = cargar_base_desde_disco()
-
 def obtener_base_kanbans():
+    if 'df_kanbans_global' not in st.session_state:
+        st.session_state['df_kanbans_global'] = cargar_base_desde_disco()
     return st.session_state['df_kanbans_global']
 
 def actualizar_base_kanbans(nuevo_df):
@@ -393,15 +392,21 @@ def limpiar_historiales_de_prueba():
     df_empty_tracker.to_csv(TRACKER_FILE, index=False)
 
 def obtener_siguiente_codigo_k(df):
+    """
+    Lógica de RECICLAJE de Código K:
+    Busca de manera secuencial (1, 2, 3...) el primer número K que NO esté actualmente en uso.
+    """
     if df.empty or df['N° Etiquetas'].dropna().empty:
         return "K00000001"
-    numeros = [int(m.group(0)) for val in df['N° Etiquetas'].dropna() if (m := re.search(r'\d+', str(val)))]
-    if not numeros:
-        return "K00000001"
     
-    # Asignar estrictamente el número máximo existente + 1
-    max_num = max(numeros)
-    return f"K{max_num + 1:08d}"
+    numeros = [int(m.group(0)) for val in df['N° Etiquetas'].dropna() if (m := re.search(r'\d+', str(val)))]
+    set_numeros = set(numeros)
+    
+    i = 1
+    while True:
+        if i not in set_numeros:
+            return f"K{i:08d}"
+        i += 1
 
 df_kanbans = obtener_base_kanbans()
 dict_pkg = cargar_packaging()
@@ -442,7 +447,7 @@ kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 kpi1.metric("Total Kanbans", total_k)
 kpi2.metric("Internos (KI)", internos_k)
 kpi3.metric("Externos (KE)", externos_k)
-kpi4.metric("Próximo Código K", proximo_k_val)
+kpi4.metric("Próximo Código K (Libre)", proximo_k_val)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -634,7 +639,7 @@ if tab_crear:
             if not material or puesto_destino in ["-- Seleccionar --", ""]:
                 st.error("❌ Error: Código de Material y Puesto Destino son campos obligatorios.")
             
-            # --- VALIDACIÓN 2: LÓGICA LOGÍSTICA PUNTO DE PEDIDO < REPOSICIÓN (INQUEBRANTABLE) ---
+            # --- VALIDACIÓN 2: LÓGICA LOGÍSTICA PUNTO DE PEDIDO < REPOSICIÓN ---
             elif tipo_soporte == "TARJETA" and float(cant_pp) >= float(cant_repo):
                 st.error(f"🚫 ACCIÓN BLOQUEADA: En Kanbans tipo TARJETA, el Punto de Pedido ({cant_pp}) DEBE SER ESTRICTAMENTE MENOR a la Cantidad de Reposición ({cant_repo}).")
             
@@ -652,7 +657,7 @@ if tab_crear:
                 
                 st.error(f"🚫 REGISTRO DUPLICADO PROHIBIDO: Ya existe un Kanban activo (**{kb_existente}**) para el Material **{material}** en el Puesto **{puesto_destino}**.")
             
-            # --- GUARDA SÓLO SI PASA TODAS LAS VALIDACIONES ---
+            # --- GUARDA Y REUTILIZA CÓDIGO K LIBRE ---
             else:
                 fecha_actual = obtener_fecha_hora_arg()
                 usr_act = st.session_state['usuario_email']
@@ -682,7 +687,7 @@ if tab_crear:
                 
                 registrar_log("CREO", codigo_k_nuevo, material, medio_str, almacen_destino, puesto_destino, usr_act)
                 crear_solicitud_tracker(material, codigo_k_nuevo, tipo_etiqueta_sap, puesto_destino, medio_str, "CÓDIGO NUEVO", "ARMAR PEDIDO", usr_act)
-                st.success(f"✅ ¡Kanban **{codigo_k_nuevo}** creado exitosamente! Registrado y sincronizado.")
+                st.success(f"✅ ¡Kanban **{codigo_k_nuevo}** asignado y creado exitosamente en tiempo real!")
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -761,7 +766,7 @@ if tab_mod:
                             
                             registrar_log("ACTUALIZO", k_sel, mat_mod, m_medio_str, m_almacen_destino, m_puesto_destino, usr_act)
                             crear_solicitud_tracker(mat_mod, k_sel, df_live.loc[idx, 'Tipo Etiqueta'], m_puesto_destino, m_medio_str, "ACTUALIZACIÓN", "IMPRIMIR / REEMPLAZAR", usr_act)
-                            st.success(f"✅ Kanban **{k_sel}** actualizado. Cambios sincronizados.")
+                            st.success(f"✅ Kanban **{k_sel}** actualizado al instante en la base global.")
                             st.rerun()
                 else:
                     st.warning(f"⚠️ No se encontraron Kanbans registrados para: **{busqueda}**")
@@ -789,7 +794,7 @@ if tab_mod:
                 
                 registrar_log("ELIMINO", k_del_sel, mat_del, medio_del, str(row_del['Almacen Destino']), puesto_del, usr_act)
                 crear_solicitud_tracker(mat_del, k_del_sel, tipo_del, puesto_del, medio_del, "BAJA / ELIMINACIÓN", "RETIRAR KB", usr_act)
-                st.success(f"♻️ Kanban **{k_del_sel}** eliminado de la base activa y registrado en Historial.")
+                st.success(f"♻️ Kanban **{k_del_sel}** eliminado. El número quedó liberado para re-asignación.")
                 st.rerun()
 
 # ==========================================
@@ -805,9 +810,10 @@ tab_export = obtener_tab("📊 Exportar Datos") or obtener_tab("📊 Exportar Da
 if tab_export:
     with tab_export:
         st.subheader("📊 Exportar Tabla Z Completa para SAP")
+        
         df_export_live = obtener_base_kanbans()
         
-        st.caption("Esta vista contiene siempre los últimos datos en vivo modificados por la planta.")
+        st.caption(f"⚡ Esta vista contiene {len(df_export_live)} registros actualizados en vivo por la planta.")
         st.dataframe(df_export_live, use_container_width=True)
         
         output = io.BytesIO()
