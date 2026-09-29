@@ -392,10 +392,6 @@ def limpiar_historiales_de_prueba():
     df_empty_tracker.to_csv(TRACKER_FILE, index=False)
 
 def obtener_siguiente_codigo_k(df):
-    """
-    Lógica de RECICLAJE de Código K:
-    Busca de manera secuencial (1, 2, 3...) el primer número K que NO esté actualmente en uso.
-    """
     if df.empty or df['N° Etiquetas'].dropna().empty:
         return "K00000001"
     
@@ -692,7 +688,7 @@ if tab_crear:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ==========================================
-# VISTA: MODIFICAR Y ELIMINAR
+# VISTA: MODIFICAR Y ELIMINAR (CON AUTO-LLENADO & ALERTAS)
 # ==========================================
 tab_mod = obtener_tab("✏️ Modificar y Eliminar")
 if tab_mod:
@@ -700,7 +696,13 @@ if tab_mod:
         st.subheader("✏️ Modificar y Eliminar Kanban")
         df_live = obtener_base_kanbans()
         
-        m_col_left, m_col_right = st.columns([2, 1])
+        # Alerta de modificación exitosa previa si se seteó
+        if 'msg_exito_mod' in st.session_state:
+            st.success(st.session_state.pop('msg_exito_mod'))
+        if 'msg_exito_del' in st.session_state:
+            st.success(st.session_state.pop('msg_exito_del'))
+
+        m_col_left, m_col_right = st.columns([2.2, 1])
         
         with m_col_left:
             busqueda = st.text_input("Ingrese Código de Material o Código K a buscar:", key="search_mod").upper().strip()
@@ -718,39 +720,80 @@ if tab_mod:
                         for _, r in kanbans_encontrados.iterrows()
                     ]
                     
-                    sel_k_fmt = st.selectbox("Seleccione el Código K a modificar:", opciones_k)
+                    sel_k_fmt = st.selectbox("Seleccione el Código K a modificar:", opciones_k, key="m_select_k_combo")
                     k_sel = sel_k_fmt.split(" | ")[0].strip()
                     
+                    # Fila actual de datos guardados para el K seleccionado
                     row = kanbans_encontrados[kanbans_encontrados['N° Etiquetas'] == k_sel].iloc[0]
                     
-                    st.caption(f"📌 Editando **{k_sel}** - Material: **{row['Material']}**")
+                    st.caption(f"📌 Editando **{k_sel}** — Material: **{row['Material']}**")
                     
+                    # PARSEO Y PRE-CARGA DINÁMICA DE VALORES GUARDADOS
+                    val_centro = str(row['Centro']) if pd.notna(row['Centro']) else "A110"
+                    
+                    tipo_k_curr = str(row['Tipo Kanban']).upper() if pd.notna(row['Tipo Kanban']) else "TARJETA"
+                    idx_tipo_k = 0 if "GAVETA" in tipo_k_curr else 1
+                    
+                    medio_curr = str(row['Medio']) if pd.notna(row['Medio']) else "SIN MEDIO DEFINIDO"
+                    
+                    alm_o_curr = str(row['Almacén Origen']) if pd.notna(row['Almacén Origen']) and str(row['Almacén Origen']) in LISTA_ALMACENES else "L010"
+                    alm_d_curr = str(row['Almacen Destino']) if pd.notna(row['Almacen Destino']) and str(row['Almacen Destino']) in LISTA_ALMACENES else "P140"
+                    puesto_d_curr = str(row['Puesto de trabajo destino']) if pd.notna(row['Puesto de trabajo destino']) else ""
+                    
+                    try: val_repo = float(row['Cantidad Reposicion'])
+                    except (ValueError, TypeError): val_repo = 0.0
+                    
+                    try: val_pp = float(row['Cantidad Punto de Pedido'])
+                    except (ValueError, TypeError): val_pp = 0.0
+                    
+                    unidades_validas = ["UN", "M", "L", "KG"]
+                    un_curr = str(row['Unidad Reposicion']).upper() if pd.notna(row['Unidad Reposicion']) and str(row['Unidad Reposicion']).upper() in unidades_validas else "UN"
+                    idx_un = unidades_validas.index(un_curr)
+                    
+                    try: val_dias = int(row['Tiempo preparación abast. (en días)'])
+                    except (ValueError, TypeError): val_dias = 1
+
+                    # CAMPOS AUTO-LLENADOS CON CLAVE DINÁMICA BASADA EN EL CÓDIGO K SELECCIONADO
                     m_col1, m_col2, m_col3 = st.columns(3)
                     with m_col1:
-                        m_centro = st.text_input("Centro", value=str(row['Centro'] or "A110"), key="m_centro")
-                        m_tipo_soporte = st.selectbox("Tipo de Kanban", ["GAVETA", "TARJETA"], index=0 if "GAVETA" in str(row['Tipo Kanban']).upper() else 1, key="m_soporte")
-                        m_medio_str = f"GAVETA {st.selectbox('Tamaño Gaveta', OPCIONES_GAVETA, key='m_gav')}" if m_tipo_soporte == "GAVETA" else st.selectbox("Medio Físico", OPCIONES_SOPORTE_TARJETA, key="m_tarj")
-
-                    with m_col2:
-                        m_almacen_origen = st.selectbox("Almacén Origen", LISTA_ALMACENES, index=LISTA_ALMACENES.index(row['Almacén Origen'] if row['Almacén Origen'] in LISTA_ALMACENES else "L010"), key="m_alm_o")
-                        m_almacen_destino = st.selectbox("Almacén Destino", LISTA_ALMACENES, index=LISTA_ALMACENES.index(row['Almacen Destino'] if row['Almacen Destino'] in LISTA_ALMACENES else "P140"), key="m_alm_d")
-                        m_puesto_destino = st.text_input("Puesto Destino", value=str(row['Puesto de trabajo destino'] or ''), key="m_p_dest").upper().strip()
-
-                    with m_col3:
-                        m_cant_repo = st.number_input("Cantidad Reposición", min_value=0.0, value=float(row['Cantidad Reposicion'] or 0.0), key="m_cant_r")
+                        m_centro = st.text_input("Centro", value=val_centro, key=f"m_c_{k_sel}")
+                        m_tipo_soporte = st.selectbox("Tipo de Kanban", ["GAVETA", "TARJETA"], index=idx_tipo_k, key=f"m_ts_{k_sel}")
                         
                         if m_tipo_soporte == "GAVETA":
-                            m_cant_pp = st.number_input("Cantidad Punto Pedido", value=m_cant_repo, disabled=True, key="m_cant_p_g")
+                            tam_gav_curr = medio_curr.replace("GAVETA", "").strip()
+                            idx_gav = OPCIONES_GAVETA.index(tam_gav_curr) if tam_gav_curr in OPCIONES_GAVETA else 0
+                            m_medio_str = f"GAVETA {st.selectbox('Tamaño Gaveta', OPCIONES_GAVETA, index=idx_gav, key=f'm_gav_{k_sel}')}"
                         else:
-                            m_cant_pp = st.number_input("Cantidad Punto Pedido", min_value=0.0, value=float(row['Cantidad Punto de Pedido'] or 0.0), key="m_cant_p_t")
+                            idx_med = OPCIONES_SOPORTE_TARJETA.index(medio_curr) if medio_curr in OPCIONES_SOPORTE_TARJETA else 0
+                            m_medio_str = st.selectbox("Medio Físico", OPCIONES_SOPORTE_TARJETA, index=idx_med, key=f"m_med_{k_sel}")
 
-                    if st.button("💾 Guardar Cambios", type="primary"):
-                        if m_tipo_soporte == "TARJETA" and float(m_cant_pp) >= float(m_cant_repo):
-                            st.error(f"🚫 ACCIÓN BLOQUEADA: En Kanbans tipo TARJETA, el Punto de Pedido ({m_cant_pp}) DEBE SER MENOR a la Cantidad de Reposición ({m_cant_repo}).")
+                    with m_col2:
+                        m_almacen_origen = st.selectbox("Almacén Origen", LISTA_ALMACENES, index=LISTA_ALMACENES.index(alm_o_curr), key=f"m_ao_{k_sel}")
+                        m_almacen_destino = st.selectbox("Almacén Destino", LISTA_ALMACENES, index=LISTA_ALMACENES.index(alm_d_curr), key=f"m_ad_{k_sel}")
+                        m_puesto_destino = st.text_input("Puesto Destino", value=puesto_d_curr, key=f"m_pd_{k_sel}").upper().strip()
+
+                    with m_col3:
+                        m_cant_repo = st.number_input("Cantidad Reposición", min_value=0.0, value=val_repo, step=1.0, key=f"m_cr_{k_sel}")
+                        
+                        if m_tipo_soporte == "GAVETA":
+                            m_cant_pp = st.number_input("Cantidad Punto Pedido", value=m_cant_repo, disabled=True, key=f"m_pp_g_{k_sel}")
+                        else:
+                            m_cant_pp = st.number_input("Cantidad Punto Pedido", min_value=0.0, value=val_pp, step=1.0, key=f"m_pp_t_{k_sel}")
+                            
+                        m_unidad = st.selectbox("Unidad Base", unidades_validas, index=idx_un, key=f"m_un_{k_sel}")
+                        m_dias_prep = st.number_input("Tiempo Preparación / Días", min_value=0, value=val_dias, key=f"m_dias_{k_sel}")
+
+                    # GUARDA CAMBIOS CON AVISOS DE CONFIRMACIÓN O ERROR
+                    if st.button("💾 Guardar Cambios de Kanban", type="primary", key=f"btn_save_{k_sel}"):
+                        if not m_puesto_destino:
+                            st.error("❌ Error: El Puesto Destino no puede estar vacío.")
+                        elif m_tipo_soporte == "TARJETA" and float(m_cant_pp) >= float(m_cant_repo):
+                            st.error(f"🚫 ERROR EN MODIFICACIÓN: En Kanbans tipo TARJETA, el Punto de Pedido ({m_cant_pp}) DEBE SER ESTRICTAMENTE MENOR a la Cantidad de Reposición ({m_cant_repo}). No se aplicaron cambios.")
                         else:
                             usr_act = st.session_state['usuario_email']
                             idx = df_live[df_live['N° Etiquetas'] == k_sel].index[0]
                             
+                            df_live.loc[idx, 'Centro'] = m_centro
                             df_live.loc[idx, 'Tipo Kanban'] = m_tipo_soporte
                             df_live.loc[idx, 'Medio'] = m_medio_str
                             df_live.loc[idx, 'Almacén Origen'] = m_almacen_origen
@@ -758,6 +801,8 @@ if tab_mod:
                             df_live.loc[idx, 'Puesto de trabajo destino'] = m_puesto_destino
                             df_live.loc[idx, 'Cantidad Reposicion'] = m_cant_repo
                             df_live.loc[idx, 'Cantidad Punto de Pedido'] = m_cant_pp
+                            df_live.loc[idx, 'Unidad Reposicion'] = m_unidad
+                            df_live.loc[idx, 'Tiempo preparación abast. (en días)'] = m_dias_prep
                             df_live.loc[idx, 'Fecha Modificación'] = obtener_fecha_hora_arg()
                             df_live.loc[idx, 'Usuario Modificación'] = usr_act
                             
@@ -766,10 +811,11 @@ if tab_mod:
                             
                             registrar_log("ACTUALIZO", k_sel, mat_mod, m_medio_str, m_almacen_destino, m_puesto_destino, usr_act)
                             crear_solicitud_tracker(mat_mod, k_sel, df_live.loc[idx, 'Tipo Etiqueta'], m_puesto_destino, m_medio_str, "ACTUALIZACIÓN", "IMPRIMIR / REEMPLAZAR", usr_act)
-                            st.success(f"✅ Kanban **{k_sel}** actualizado al instante en la base global.")
+                            
+                            st.session_state['msg_exito_mod'] = f"✅ ¡Kanban **{k_sel}** (Material: {mat_mod}) modificado con éxito en la base de datos!"
                             st.rerun()
                 else:
-                    st.warning(f"⚠️ No se encontraron Kanbans registrados para: **{busqueda}**")
+                    st.warning(f"⚠️ No se encontraron Kanbans registrados para la búsqueda: **{busqueda}**")
 
         with m_col_right:
             st.markdown("#### 🗑️ Dar de Baja Kanban")
@@ -794,7 +840,8 @@ if tab_mod:
                 
                 registrar_log("ELIMINO", k_del_sel, mat_del, medio_del, str(row_del['Almacen Destino']), puesto_del, usr_act)
                 crear_solicitud_tracker(mat_del, k_del_sel, tipo_del, puesto_del, medio_del, "BAJA / ELIMINACIÓN", "RETIRAR KB", usr_act)
-                st.success(f"♻️ Kanban **{k_del_sel}** eliminado. El número quedó liberado para re-asignación.")
+                
+                st.session_state['msg_exito_del'] = f"♻️ Kanban **{k_del_sel}** eliminado correctamente. El código quedó liberado para ser reciclado."
                 st.rerun()
 
 # ==========================================
