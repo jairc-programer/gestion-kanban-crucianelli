@@ -1156,7 +1156,6 @@ if tab_crear:
                     f"✅ ¡Kanban {nuevo_k} creado exitosamente y registrado en la cola del Tracker!"
                 )
                 st.rerun()
-
 # ==========================================
 # VISTA: MODIFICAR Y ELIMINAR (PROCESOS)
 # ==========================================
