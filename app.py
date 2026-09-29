@@ -111,7 +111,7 @@ ROLES_PREDEFINIDOS = {
     
     "mlopez@crucianelli.com": "Logistica", "recepcion3@crucianelli.com": "Logistica",
     "gpereyra@crucianelli.com": "Logistica", "jporta@crucianelli.com": "Logistica",
-    "spetetta@crucianelli.com": "Logistica", "gfianchini@crucianelli.com": "Logistica"
+    "spetetta@crucianelli.com": "Logistica",
     
     "fany@crucianelli.com": "Consulta", "strillini@crucianelli.com": "Consulta",
     "apicotto@crucianelli.com": "Consulta", "fsolis@crucianelli.com": "Consulta",
