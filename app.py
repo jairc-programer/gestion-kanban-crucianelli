@@ -85,6 +85,14 @@ st.markdown("""
         align-items: center;
         margin-bottom: 16px;
     }
+
+    .tracker-card {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 15px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -647,7 +655,7 @@ if tab_kpis:
                 st.info("Sin registros de movimientos en el rango seleccionado.")
 
         with g_col4:
-            st.markdown("##### ⏱️ Tendencia de Finalización de Tareas (Lead Time)")
+            st.markdown("##### ⏱️️ Tendencia de Finalización de Tareas (Lead Time)")
             if not df_tr_filtrado.empty:
                 df_tr_f = df_tr_filtrado.copy()
 
@@ -655,12 +663,10 @@ if tab_kpis:
                 df_tr_f['f_imp'] = pd.to_datetime(df_tr_f['Fecha_Impresion'], errors='coerce')
                 df_tr_f['f_fin'] = pd.to_datetime(df_tr_f['Fecha_Finalizacion'], errors='coerce')
 
-                # Cálculo de los 3 hitos en días
                 df_tr_f['Días Carga a Impresión'] = (df_tr_f['f_imp'] - df_tr_f['f_sol']).dt.days
                 df_tr_f['Días Impresión a Finalización'] = (df_tr_f['f_fin'] - df_tr_f['f_imp']).dt.days
                 df_tr_f['Días Totales de Resolución'] = (df_tr_f['f_fin'] - df_tr_f['f_sol']).dt.days
 
-                # Agrupar promedios mensuales
                 df_tr_f['Mes_dt'] = df_tr_f['f_sol'].dt.to_period('M')
                 df_tr_f['Mes'] = df_tr_f['f_sol'].dt.strftime('%b %Y')
                 
@@ -690,13 +696,20 @@ if tab_kpis:
                 st.info("El Tracker de Ejecución Logística no contiene registros.")
 
 # ==========================================
-# VISTA: TRACKER DE EJECUCIÓN LOGÍSTICA
+# VISTA: TRACKER DE EJECUCIÓN LOGÍSTICA (PERMISOS RESTRINGIDOS)
 # ==========================================
 tab_tracker = obtener_tab("🚚 Tracker de Ejecución Logística") or obtener_tab("🚚 Estado de Solicitudes")
 if tab_tracker:
     with tab_tracker:
         st.subheader("🚚 Tracker de Ejecución Logística")
-        st.write("Gestiona la carga en SAP, impresión y entrega física de tarjetas.")
+        
+        # PERMISO OPERATIVO EXCLUSIVO DE LOGÍSTICA
+        es_logistica = (rol_actual == "Logistica")
+        
+        if es_logistica:
+            st.write("Gestiona la carga en SAP, impresión y entrega física de tarjetas mediante botones de flujo directo.")
+        else:
+            st.info("🔒 **Modo Consulta (Solo Lectura):** Esta sección es gestionada operativamente por el grupo de **Logística**. Puedes visualizar el estado en tiempo real de cada solicitud.")
 
         df_tr = cargar_tracker()
         
@@ -729,53 +742,98 @@ if tab_tracker:
                 df_filtrado_tr = df_filtrado_tr[df_filtrado_tr['Estado_Fisico'] == filtro_fisico]
 
             st.write(f"Mostrando **{len(df_filtrado_tr)}** de **{len(df_tr)}** solicitudes.")
-            
-            if rol_actual in ["Procesos", "Logistica"]:
-                st.markdown("### 🛠️ Actualizar Estado de Solicitudes")
+            st.markdown("---")
+
+            # LISTADO DE TARJETAS Y ACCIONES
+            for idx, row in df_filtrado_tr.iterrows():
+                sol_id = row['ID_Solicitud']
                 
-                df_editado = st.data_editor(
-                    df_filtrado_tr,
-                    column_config={
-                        "ID_Solicitud": st.column_config.TextColumn("ID Solicitud", disabled=True),
-                        "Fecha_Solicitud": st.column_config.TextColumn("Fecha Solicitud", disabled=True),
-                        "Material": st.column_config.TextColumn("Material", disabled=True),
-                        "Código_K": st.column_config.TextColumn("Código K", disabled=True),
-                        "Tipo_KB": st.column_config.TextColumn("Tipo KB", disabled=True),
-                        "Puesto_Destino": st.column_config.TextColumn("Puesto Destino", disabled=True),
-                        "Medio": st.column_config.TextColumn("Medio", disabled=True),
-                        "Cambio": st.column_config.TextColumn("Cambio", disabled=True),
-                        "Acción_Requerida": st.column_config.TextColumn("Acción Requerida", disabled=True),
-                        "Cargado_SAP": st.column_config.SelectboxColumn("Cargado SAP", options=["NO", "SI"], required=True),
-                        "Impreso": st.column_config.SelectboxColumn("Impreso", options=["NO", "SI"], required=True),
-                        "Fecha_Impresion": st.column_config.TextColumn("Fecha Impresión"),
-                        "Estado_Fisico": st.column_config.SelectboxColumn("Estado Físico", options=["Pendiente", "En Proceso", "Impreso", "Entregado"], required=True),
-                        "Fecha_Finalizacion": st.column_config.TextColumn("Fecha Finalización"),
-                        "Observación": st.column_config.TextColumn("Observación"),
-                        "Usuario_Procesos": st.column_config.TextColumn("Usuario Carga", disabled=True)
-                    },
-                    hide_index=True,
-                    use_container_width=True,
-                    key="editor_tracker"
-                )
+                with st.container():
+                    st.markdown(f"""
+                    <div class="tracker-card">
+                        <h4>📋 Solicitud: {sol_id} | KB: <span style="color:#38bdf8;">{row['Código_K']}</span> | Material: <span style="color:#f59e0b;">{row['Material']}</span></h4>
+                        <p style="margin:2px 0;"><b>Puesto Destino:</b> {row['Puesto_Destino']} | <b>Medio:</b> {row['Medio']} | <b>Cambio:</b> {row['Cambio']} | <b>Acción Requerida:</b> {row['Acción_Requerida']}</p>
+                        <p style="margin:2px 0; font-size:0.85rem; color:#888;">Creado por: {row['Usuario_Procesos']} el {row['Fecha_Solicitud']}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-                if st.button("💾 Guardar Cambios en Tracker", type="primary"):
-                    now_date = datetime.now(ARG_TZ).strftime("%Y-%m-%d")
-                    for idx, row in df_editado.iterrows():
-                        sol_id = row['ID_Solicitud']
-                        
-                        if row['Impreso'] == 'SI' and (row['Fecha_Impresion'] == '-' or not row['Fecha_Impresion']):
-                            row['Fecha_Impresion'] = now_date
-                        
-                        if row['Estado_Fisico'] == 'Entregado' and (row['Fecha_Finalizacion'] == '-' or not row['Fecha_Finalizacion']):
-                            row['Fecha_Finalizacion'] = now_date
-                            
-                        df_tr.loc[df_tr['ID_Solicitud'] == sol_id, :] = row
+                    c_sap, c_imp, c_estado, c_obs = st.columns([1.5, 1.5, 2, 2.5])
 
-                    guardar_tracker(df_tr)
-                    st.success("✅ Tracker actualizado correctamente.")
-                    st.rerun()
-            else:
-                st.dataframe(df_filtrado_tr, use_container_width=True, hide_index=True)
+                    # 1. ESTADO Y BOTÓN CARGA EN SAP
+                    with c_sap:
+                        st.markdown("**1. Carga SAP**")
+                        cargado_sap = row['Cargado_SAP'] == 'SI'
+                        if cargado_sap:
+                            st.success("✅ Cargado en SAP")
+                        else:
+                            st.warning("⏳ Pendiente SAP")
+                            if es_logistica:
+                                if st.button("Marcar Cargado en SAP", key=f"btn_sap_{sol_id}"):
+                                    df_tr.loc[df_tr['ID_Solicitud'] == sol_id, 'Cargado_SAP'] = 'SI'
+                                    guardar_tracker(df_tr)
+                                    st.success("Carga en SAP registrada.")
+                                    st.rerun()
+
+                    # 2. ESTADO Y BOTÓN IMPRESIÓN
+                    with c_imp:
+                        st.markdown("**2. Impresión**")
+                        impreso = row['Impreso'] == 'SI'
+                        if impreso:
+                            st.success(f"🖨️ Impreso ({row['Fecha_Impresion']})")
+                        else:
+                            st.warning("⏳ Pendiente Impresión")
+                            if es_logistica:
+                                if st.button("Marcar como Impreso", key=f"btn_imp_{sol_id}"):
+                                    now_date = datetime.now(ARG_TZ).strftime("%Y-%m-%d")
+                                    df_tr.loc[df_tr['ID_Solicitud'] == sol_id, 'Impreso'] = 'SI'
+                                    df_tr.loc[df_tr['ID_Solicitud'] == sol_id, 'Fecha_Impresion'] = now_date
+                                    if df_tr.loc[df_tr['ID_Solicitud'] == sol_id, 'Estado_Fisico'].values[0] == 'Pendiente':
+                                        df_tr.loc[df_tr['ID_Solicitud'] == sol_id, 'Estado_Fisico'] = 'En Proceso'
+                                    guardar_tracker(df_tr)
+                                    st.success("Impresión registrada.")
+                                    st.rerun()
+
+                    # 3. ESTADO Y BOTONES DE FLUJO FÍSICO
+                    with c_estado:
+                        st.markdown("**3. Estado Físico**")
+                        estado_actual = row['Estado_Fisico']
+                        st.info(f"Estado Actual: **{estado_actual}**")
+                        
+                        if es_logistica:
+                            col_b1, col_b2 = st.columns(2)
+                            with col_b1:
+                                if estado_actual != "En Proceso" and estado_actual != "Entregado":
+                                    if st.button("▶️ En Proceso", key=f"btn_proc_{sol_id}"):
+                                        df_tr.loc[df_tr['ID_Solicitud'] == sol_id, 'Estado_Fisico'] = 'En Proceso'
+                                        guardar_tracker(df_tr)
+                                        st.rerun()
+                            with col_b2:
+                                if estado_actual != "Entregado":
+                                    if st.button("✅ Finalizar", key=f"btn_fin_{sol_id}"):
+                                        now_date = datetime.now(ARG_TZ).strftime("%Y-%m-%d")
+                                        df_tr.loc[df_tr['ID_Solicitud'] == sol_id, 'Estado_Fisico'] = 'Entregado'
+                                        df_tr.loc[df_tr['ID_Solicitud'] == sol_id, 'Fecha_Finalizacion'] = now_date
+                                        guardar_tracker(df_tr)
+                                        st.success("Solicitud Finalizada.")
+                                        st.rerun()
+
+                    # 4. OBSERVACIONES Y GUARDADO INDIVIDUAL
+                    with c_obs:
+                        st.markdown("**4. Observaciones**")
+                        obs_val = "" if row['Observación'] == "-" else row['Observación']
+                        
+                        if es_logistica:
+                            nueva_obs = st.text_input("Observación:", value=obs_val, key=f"txt_obs_{sol_id}")
+                            if st.button("💾 Guardar Obs", key=f"btn_obs_{sol_id}"):
+                                val_save = nueva_obs.strip() if nueva_obs.strip() else "-"
+                                df_tr.loc[df_tr['ID_Solicitud'] == sol_id, 'Observación'] = val_save
+                                guardar_tracker(df_tr)
+                                st.success("Observación guardada.")
+                                st.rerun()
+                        else:
+                            st.text_input("Observación:", value=obs_val, key=f"txt_obs_read_{sol_id}", disabled=True)
+
+                    st.markdown("---")
 
 # ==========================================
 # VISTA: CREAR NUEVO KANBAN (PROCESOS)
@@ -1079,7 +1137,7 @@ if tab_perfil:
         if rol_actual_val == "Procesos":
             st.markdown("---")
             st.subheader("🧹 Mantenimiento de Sistema (Solo Procesos)")
-            with st.expander("⚠️️ Zona de Limpieza de Historiales"):
+            with st.expander("⚠ Zona de Limpieza de Historiales"):
                 st.write("Esta acción borrará el historial de auditoría y los registros del tracker de ejecución. **No afectará a la base de Kanbans activos (Tabla Z).**")
                 if st.button("🚨 Resetear Historiales y Tracker de Prueba"):
                     limpiar_historiales_de_prueba()
