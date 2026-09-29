@@ -101,7 +101,7 @@ TRACKER_FILE = "tracker_ejecucion.csv"
 USERS_FILE = "usuarios.json"
 SHEET_NAME = "Kanbans CRUCIANELLI"
 
-LOG_COLUMNS = ["Fecha_Hora", "Acción", "Código_K", "Material", "Medio", "Almacén_Destino", "Puesto_Destino", "Usuario"]
+LOG_COLUMNS = ["Fecha_Hora", "Acción", "Código_K", "Material", "Medio", "Almacén_Destino", "Puesto_Destino", "Detalle_Cambio", "Usuario"]
 TRACKER_COLUMNS = ["ID_Solicitud", "Fecha_Solicitud", "Material", "Código_K", "Tipo_KB", "Puesto_Destino", "Medio", "Cambio", "Acción_Requerida", "Cargado_SAP", "Impreso", "Fecha_Impresion", "Estado_Fisico", "Fecha_Finalizacion", "Observación", "Usuario_Procesos"]
 
 ROLES_PREDEFINIDOS = {
@@ -334,22 +334,22 @@ def cargar_packaging():
 def cargar_logs():
     if os.path.exists(LOG_FILE):
         try:
-            df_logs = pd.read_csv(LOG_FILE, on_bad_lines='skip')
+            df_logs = pd.read_csv(LOG_FILE, on_bad_lines='skip', dtype=str)
             for col in LOG_COLUMNS:
                 if col not in df_logs.columns:
-                    df_logs[col] = None
+                    df_logs[col] = "-"
             mapeo_acciones = {
                 'CREAR': 'CREACIÓN', 'CREO': 'CREACIÓN', 'CREACION': 'CREACIÓN',
                 'MODIFICAR': 'MODIFICACIÓN', 'ACTUALIZO': 'MODIFICACIÓN', 'MODIFICACION': 'MODIFICACIÓN',
                 'ELIMINAR': 'ELIMINACIÓN', 'ELIMINO': 'ELIMINACIÓN', 'ELIMINACION': 'ELIMINACIÓN'
             }
             df_logs['Acción'] = df_logs['Acción'].astype(str).str.upper().map(lambda x: mapeo_acciones.get(x, x))
-            return df_logs[LOG_COLUMNS]
+            return df_logs[LOG_COLUMNS].fillna("-")
         except Exception:
             return pd.DataFrame(columns=LOG_COLUMNS)
     return pd.DataFrame(columns=LOG_COLUMNS)
 
-def registrar_log(accion, codigo_k, material, medio, alm_dest, puesto_dest, usuario):
+def registrar_log(accion, codigo_k, material, medio, alm_dest, puesto_dest, detalle_cambio, usuario):
     now = obtener_fecha_hora_arg()
     df_actual = cargar_logs()
     if pd.isna(medio) or str(medio).strip() in ["None", "nan", "N/A", ""]:
@@ -361,7 +361,7 @@ def registrar_log(accion, codigo_k, material, medio, alm_dest, puesto_dest, usua
     nuevo_log = pd.DataFrame([{
         "Fecha_Hora": now, "Acción": accion_norm, "Código_K": str(codigo_k),
         "Material": str(material), "Medio": str(medio), "Almacén_Destino": str(alm_dest),
-        "Puesto_Destino": str(puesto_dest), "Usuario": str(usuario)
+        "Puesto_Destino": str(puesto_dest), "Detalle_Cambio": str(detalle_cambio), "Usuario": str(usuario)
     }])
     df_final = pd.concat([df_actual, nuevo_log], ignore_index=True)
     df_final.to_csv(LOG_FILE, index=False)
@@ -592,7 +592,7 @@ if tab_tracker:
                     with col_tr1:
                         sol_sel = st.selectbox("Seleccione ID Solicitud a actualizar:", sol_ids)
                         row_tr = df_tr[df_tr['ID_Solicitud'] == sol_sel].iloc[0]
-                        st.caption(f"**Material:** {row_tr['Material']} | **Código K:** {row_tr['Código_K']} | **Acción:** {row_tr['Acción_Requerida']}")
+                        st.caption(f"**Material:** {row_tr['Material']} | **Código K:** {row_tr['Código_K']} | **Cambio:** {row_tr['Cambio']}")
 
                     with col_tr2:
                         chk_sap = st.checkbox("Cargado en SAP", value=(str(row_tr['Cargado_SAP']) == 'SI'))
@@ -706,14 +706,15 @@ if tab_crear:
                 df_actualizado = pd.concat([df_curr, pd.DataFrame([nuevo_reg])], ignore_index=True)
                 actualizar_base_kanbans(df_actualizado)
                 
-                registrar_log("CREO", codigo_k_nuevo, material, medio_str, almacen_destino, puesto_destino, usr_act)
-                crear_solicitud_tracker(material, codigo_k_nuevo, tipo_etiqueta_sap, puesto_destino, medio_str, "CÓDIGO NUEVO", "ARMAR PEDIDO", usr_act)
+                detalle = f"Alta de Kanban ({tipo_soporte} - {medio_str} | Rep: {cant_repo} | PP: {cant_pp})"
+                registrar_log("CREO", codigo_k_nuevo, material, medio_str, almacen_destino, puesto_destino, detalle, usr_act)
+                crear_solicitud_tracker(material, codigo_k_nuevo, tipo_etiqueta_sap, puesto_destino, medio_str, detalle, "ARMAR PEDIDO", usr_act)
                 st.success(f"✅ ¡Kanban **{codigo_k_nuevo}** asignado y creado exitosamente en tiempo real!")
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ==========================================
-# VISTA: MODIFICAR Y ELIMINAR (CONVERSIÓN DINÁMICA & CONTROLES DE PUNTO DE PEDIDO)
+# VISTA: MODIFICAR Y ELIMINAR (CON DETECCIÓN DE CAMBIOS)
 # ==========================================
 tab_mod = obtener_tab("✏️ Modificar y Eliminar")
 if tab_mod:
@@ -783,7 +784,7 @@ if tab_mod:
                         # --- SELECCIÓN DINÁMICA DEL MEDIO ---
                         if m_tipo_soporte == "GAVETA":
                             tam_gav_curr = medio_curr.replace("GAVETA", "").strip()
-                            idx_gav = OPCIONES_GAVETA.index(tam_gav_curr) if tam_gav_curr in OPCIONES_GAVETA else 1 # 'M' por defecto
+                            idx_gav = OPCIONES_GAVETA.index(tam_gav_curr) if tam_gav_curr in OPCIONES_GAVETA else 1
                             m_medio_str = f"GAVETA {st.selectbox('Tamaño Gaveta', OPCIONES_GAVETA, index=idx_gav, key=f'm_gav_{k_sel}')}"
                         else:
                             idx_med = OPCIONES_SOPORTE_TARJETA.index(medio_curr) if medio_curr in OPCIONES_SOPORTE_TARJETA else 0
@@ -801,7 +802,6 @@ if tab_mod:
                         if m_tipo_soporte == "GAVETA":
                             m_cant_pp = st.number_input("Cantidad Punto Pedido", value=m_cant_repo, disabled=True, key=f"m_pp_g_{k_sel}")
                         else:
-                            # Habilitado para edición libre cuando es TARJETA
                             m_cant_pp = st.number_input("Cantidad Punto Pedido", min_value=0.0, value=val_pp, disabled=False, step=1.0, key=f"m_pp_t_{k_sel}")
                             
                         m_unidad = st.selectbox("Unidad Base", unidades_validas, index=idx_un, key=f"m_un_{k_sel}")
@@ -810,34 +810,50 @@ if tab_mod:
                     if st.button("💾 Guardar Cambios de Kanban", type="primary", key=f"btn_save_{k_sel}"):
                         if not m_puesto_destino:
                             st.error("❌ Error: El Puesto Destino no puede estar vacío.")
-                        # VALIDACIÓN DE REGLA DE NEGOCIO PARA TARJETA
                         elif m_tipo_soporte == "TARJETA" and float(m_cant_pp) >= float(m_cant_repo):
                             st.error(f"🚫 ACCIÓN BLOQUEADA: En Kanbans tipo TARJETA, el Punto de Pedido ({m_cant_pp}) DEBE SER ESTRICTAMENTE MENOR a la Cantidad de Reposición ({m_cant_repo}). No se aplicaron cambios.")
                         else:
-                            usr_act = st.session_state['usuario_email']
-                            idx = df_live[df_live['N° Etiquetas'] == k_sel].index[0]
-                            
-                            df_live.loc[idx, 'Centro'] = str(m_centro)
-                            df_live.loc[idx, 'Tipo Kanban'] = str(m_tipo_soporte)
-                            df_live.loc[idx, 'Medio'] = str(m_medio_str)
-                            df_live.loc[idx, 'Almacén Origen'] = str(m_almacen_origen)
-                            df_live.loc[idx, 'Almacen Destino'] = str(m_almacen_destino)
-                            df_live.loc[idx, 'Puesto de trabajo destino'] = str(m_puesto_destino)
-                            df_live.loc[idx, 'Cantidad Reposicion'] = str(m_cant_repo)
-                            df_live.loc[idx, 'Cantidad Punto de Pedido'] = str(m_cant_pp)
-                            df_live.loc[idx, 'Unidad Reposicion'] = str(m_unidad)
-                            df_live.loc[idx, 'Tiempo preparación abast. (en días)'] = str(m_dias_prep)
-                            df_live.loc[idx, 'Fecha Modificación'] = str(obtener_fecha_hora_arg())
-                            df_live.loc[idx, 'Usuario Modificación'] = str(usr_act)
-                            
-                            mat_mod = str(df_live.loc[idx, 'Material'])
-                            actualizar_base_kanbans(df_live)
-                            
-                            registrar_log("ACTUALIZO", k_sel, mat_mod, m_medio_str, m_almacen_destino, m_puesto_destino, usr_act)
-                            crear_solicitud_tracker(mat_mod, k_sel, df_live.loc[idx, 'Tipo Etiqueta'], m_puesto_destino, m_medio_str, "ACTUALIZACIÓN", "IMPRIMIR / REEMPLAZAR", usr_act)
-                            
-                            st.session_state['msg_exito_mod'] = f"✅ ¡Kanban **{k_sel}** (Material: {mat_mod}) modificado con éxito en la base de datos!"
-                            st.rerun()
+                            # --- DETECCIÓN DE CAMBIOS (DIFF) ---
+                            cambios_detectados = []
+                            if str(m_centro) != str(val_centro): cambios_detectados.append(f"Centro: {val_centro} ➔ {m_centro}")
+                            if str(m_tipo_soporte) != str(tipo_k_curr): cambios_detectados.append(f"Tipo: {tipo_k_curr} ➔ {m_tipo_soporte}")
+                            if str(m_medio_str) != str(medio_curr): cambios_detectados.append(f"Medio: {medio_curr} ➔ {m_medio_str}")
+                            if str(m_almacen_origen) != str(alm_o_curr): cambios_detectados.append(f"Alm. Orig: {alm_o_curr} ➔ {m_almacen_origen}")
+                            if str(m_almacen_destino) != str(alm_d_curr): cambios_detectados.append(f"Alm. Dest: {alm_d_curr} ➔ {m_almacen_destino}")
+                            if str(m_puesto_destino) != str(puesto_d_curr): cambios_detectados.append(f"Puesto Dest: {puesto_d_curr} ➔ {m_puesto_destino}")
+                            if float(m_cant_repo) != float(val_repo): cambios_detectados.append(f"Cant. Repo: {val_repo} ➔ {m_cant_repo}")
+                            if float(m_cant_pp) != float(val_pp): cambios_detectados.append(f"Cant. PP: {val_pp} ➔ {m_cant_pp}")
+                            if str(m_unidad) != str(un_curr): cambios_detectados.append(f"Unidad: {un_curr} ➔ {m_unidad}")
+                            if int(m_dias_prep) != int(val_dias): cambios_detectados.append(f"Días Prep: {val_dias} ➔ {m_dias_prep}")
+
+                            if not cambios_detectados:
+                                st.info("ℹ️ No se detectaron modificaciones respecto a los datos actuales.")
+                            else:
+                                detalle_cambios_str = " | ".join(cambios_detectados)
+                                usr_act = st.session_state['usuario_email']
+                                idx = df_live[df_live['N° Etiquetas'] == k_sel].index[0]
+                                
+                                df_live.loc[idx, 'Centro'] = str(m_centro)
+                                df_live.loc[idx, 'Tipo Kanban'] = str(m_tipo_soporte)
+                                df_live.loc[idx, 'Medio'] = str(m_medio_str)
+                                df_live.loc[idx, 'Almacén Origen'] = str(m_almacen_origen)
+                                df_live.loc[idx, 'Almacen Destino'] = str(m_almacen_destino)
+                                df_live.loc[idx, 'Puesto de trabajo destino'] = str(m_puesto_destino)
+                                df_live.loc[idx, 'Cantidad Reposicion'] = str(m_cant_repo)
+                                df_live.loc[idx, 'Cantidad Punto de Pedido'] = str(m_cant_pp)
+                                df_live.loc[idx, 'Unidad Reposicion'] = str(m_unidad)
+                                df_live.loc[idx, 'Tiempo preparación abast. (en días)'] = str(m_dias_prep)
+                                df_live.loc[idx, 'Fecha Modificación'] = str(obtener_fecha_hora_arg())
+                                df_live.loc[idx, 'Usuario Modificación'] = str(usr_act)
+                                
+                                mat_mod = str(df_live.loc[idx, 'Material'])
+                                actualizar_base_kanbans(df_live)
+                                
+                                registrar_log("ACTUALIZO", k_sel, mat_mod, m_medio_str, m_almacen_destino, m_puesto_destino, detalle_cambios_str, usr_act)
+                                crear_solicitud_tracker(mat_mod, k_sel, df_live.loc[idx, 'Tipo Etiqueta'], m_puesto_destino, m_medio_str, detalle_cambios_str, "IMPRIMIR / REEMPLAZAR", usr_act)
+                                
+                                st.session_state['msg_exito_mod'] = f"✅ ¡Kanban **{k_sel}** modificado con éxito! Cambios registrados: {detalle_cambios_str}"
+                                st.rerun()
                 else:
                     st.warning(f"⚠️ No se encontraron Kanbans registrados para la búsqueda: **{busqueda}**")
 
@@ -862,10 +878,11 @@ if tab_mod:
                 df_nuevo_global = df_live[df_live['N° Etiquetas'] != k_del_sel]
                 actualizar_base_kanbans(df_nuevo_global)
                 
-                registrar_log("ELIMINO", k_del_sel, mat_del, medio_del, str(row_del['Almacen Destino']), puesto_del, usr_act)
-                crear_solicitud_tracker(mat_del, k_del_sel, tipo_del, puesto_del, medio_del, "BAJA / ELIMINACIÓN", "RETIRAR KB", usr_act)
+                detalle_baja = f"Baja de Kanban (Puesto: {puesto_del} | Medio: {medio_del})"
+                registrar_log("ELIMINO", k_del_sel, mat_del, medio_del, str(row_del['Almacen Destino']), puesto_del, detalle_baja, usr_act)
+                crear_solicitud_tracker(mat_del, k_del_sel, tipo_del, puesto_del, medio_del, detalle_baja, "RETIRAR KB", usr_act)
                 
-                st.session_state['msg_exito_del'] = f"♻️ Kanban **{k_del_sel}** eliminado correctamente. El código quedó liberado para ser reciclado."
+                st.session_state['msg_exito_del'] = f"♻️️ Kanban **{k_del_sel}** eliminado correctamente. El código quedó liberado para ser reciclado."
                 st.rerun()
 
 # ==========================================
