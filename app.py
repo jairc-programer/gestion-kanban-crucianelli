@@ -94,6 +94,7 @@ def obtener_fecha_hora_arg():
     return datetime.now(ARG_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
 DB_FILE = "TablaZ.xlsx"
+LIVE_DB_FILE = "TablaZ_live.csv"
 PKG_FILE = "Lote packaging.xlsx"
 LOG_FILE = "historial_cambios.csv"
 TRACKER_FILE = "tracker_ejecucion.csv"
@@ -109,13 +110,13 @@ ROLES_PREDEFINIDOS = {
     "produccion@crucianelli.com": "Procesos", "abacelli@crucianelli.com": "Procesos",
     "tabrate@crucianelli.com": "Procesos", "llatanzi@crucianelli.com": "Procesos",
     
-    # USUARIOS DE LOGÍSTICA
+    # LOGÍSTICA
     "mlopez@crucianelli.com": "Logistica", "recepcion3@crucianelli.com": "Logistica",
     "gpereyra@crucianelli.com": "Logistica", "jporta@crucianelli.com": "Logistica",
     "spetetta@crucianelli.com": "Logistica", "gfiianchini@crucianelli.com": "Logistica",
     "ileon@crucianelli.com": "Logistica",
     
-    # USUARIOS DE CONSULTA
+    # CONSULTA
     "fany@crucianelli.com": "Consulta", "strillini@crucianelli.com": "Consulta",
     "apicotto@crucianelli.com": "Consulta", "fsolis@crucianelli.com": "Consulta",
     "isola@crucianelli.com": "Consulta", "bfrutos@crucianelli.com": "Consulta",
@@ -258,9 +259,23 @@ if not st.session_state['usuario_email']:
     st.stop()
 
 # ==========================================
-# MANEJO CENTRALIZADO Y SINCRONIZADO EN VIVO
+# MANEJO CENTRALIZADO CON PERSISTENCIA VIVA
 # ==========================================
 def cargar_base_desde_disco():
+    # 1. Priorizar lectura desde la base de datos viva sincronizada en CSV
+    if os.path.exists(LIVE_DB_FILE):
+        try:
+            df = pd.read_csv(LIVE_DB_FILE, dtype=str)
+            for col in COLUMNS:
+                if col not in df.columns:
+                    df[col] = None
+            df['Material'] = df['Material'].fillna('').astype(str).str.strip().str.upper()
+            df['N° Etiquetas'] = df['N° Etiquetas'].fillna('').astype(str).str.strip().str.upper()
+            return df[COLUMNS].reset_index(drop=True)
+        except Exception:
+            pass
+
+    # 2. Si no existe la base viva, tomar TablaZ.xlsx como punto de partida inicial
     if os.path.exists(DB_FILE):
         try:
             df = pd.read_excel(DB_FILE, sheet_name=SHEET_NAME)
@@ -281,7 +296,10 @@ def cargar_base_desde_disco():
                     pass
                 return "TARJETA"
             df['Tipo Kanban'] = df.apply(determinar_tipo_kanban, axis=1)
-            return df[COLUMNS].reset_index(drop=True)
+            df = df[COLUMNS].reset_index(drop=True)
+            # Guardar la base inicial viva
+            df.to_csv(LIVE_DB_FILE, index=False)
+            return df
         except Exception:
             return pd.DataFrame(columns=COLUMNS)
     return pd.DataFrame(columns=COLUMNS)
@@ -294,11 +312,19 @@ def obtener_base_kanbans(forzar=False):
 def actualizar_base_kanbans(nuevo_df):
     df_limpio = nuevo_df.reset_index(drop=True)
     st.session_state['df_kanbans_global'] = df_limpio
+    
+    # Persistir inmediatamente en CSV para mantener sincronización entre sesiones/usuarios
+    try:
+        df_limpio.to_csv(LIVE_DB_FILE, index=False)
+    except Exception as e:
+        st.error(f"⚠️ Error en persistencia CSV viva: {e}")
+
+    # Intentar actualizar también el Excel físico de respaldo
     try:
         with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:
             df_limpio.to_excel(writer, sheet_name=SHEET_NAME, index=False)
-    except Exception as e:
-        st.error(f"⚠️ Error al guardar en el archivo Excel físico: {e}")
+    except Exception:
+        pass
 
 def cargar_packaging():
     if os.path.exists(PKG_FILE):
@@ -407,7 +433,7 @@ def obtener_siguiente_codigo_k(df):
             return f"K{i:08d}"
         i += 1
 
-df_kanbans = obtener_base_kanbans()
+df_kanbans = obtener_base_kanbans(forzar=True)
 dict_pkg = cargar_packaging()
 rol_actual = st.session_state.get('usuario_rol', 'Consulta')
 
@@ -462,11 +488,11 @@ st.markdown("<br>", unsafe_allow_html=True)
 # MENÚ POR PERFILES Y NAVEGACIÓN
 # ==========================================
 if rol_actual == "Procesos":
-    lista_tabs = ["📈 Panel KPIs & Métricas", "🚚 Tracker de Ejecución Logística", "➕ Crear Nuevo Kanban", "✏️ Modificar y Eliminar", "📊 Exportar Datos", "📜 Historial Auditoría", "👤 Mi Perfil"]
+    lista_tabs = ["📈 Panel KPIs & Métricas", "🚚 Tracker de Ejecución Logística", "➕ Crear Nuevo Kanban", "✏️ Modificar y Eliminar", "📊 Consulta y Exportar Tabla Z (SAP)", "📜 Historial Auditoría", "👤 Mi Perfil"]
 elif rol_actual == "Logistica":
-    lista_tabs = ["🚚 Tracker de Ejecución Logística", "📈 Panel KPIs & Métricas", "📋 Consulta General", "📊 Exportar Datos para SAP", "📜 Historial Auditoría", "👤 Mi Perfil"]
+    lista_tabs = ["🚚 Tracker de Ejecución Logística", "📈 Panel KPIs & Métricas", "📊 Consulta y Exportar Tabla Z (SAP)", "📜 Historial Auditoría", "👤 Mi Perfil"]
 else:
-    lista_tabs = ["📈 Panel KPIs & Métricas", "📋 Consulta General", "🚚 Estado de Solicitudes", "📊 Exportar Datos para SAP", "👤 Mi Perfil"]
+    lista_tabs = ["📈 Panel KPIs & Métricas", "🚚 Estado de Solicitudes", "📊 Consulta y Exportar Tabla Z (SAP)", "👤 Mi Perfil"]
 
 tabs = st.tabs(lista_tabs)
 
@@ -505,7 +531,7 @@ if tab_kpis:
             fi, ff = rango_fechas_kpi
             df_logs_filtrado = df_logs_filtrado[(df_logs_filtrado['Fecha_dt'].dt.date >= fi) & (df_logs_filtrado['Fecha_dt'].dt.date <= ff)]
             if f_alm != "Todos": df_logs_filtrado = df_logs_filtrado[df_logs_filtrado['Almacén_Destino'] == f_alm]
-            if f_usr != "Todos": df_logs_filtrado = df_logs_filtrado[df_logs_filtrado['Usuario'] == f_usr]
+            if f_usr != "Todos": df_logs_filtrado = df_logs_filtrado[df_usr]
 
         c_creados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'CREACIÓN']) if not df_logs_filtrado.empty else 0
         c_actualizados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'MODIFICACIÓN']) if not df_logs_filtrado.empty else 0
@@ -640,7 +666,7 @@ if tab_crear:
             dias_prep = st.number_input("Tiempo Preparación / Días", min_value=0, value=1)
 
         if st.button("💾 Guardar y Crear Kanban", type="primary"):
-            df_curr = obtener_base_kanbans()
+            df_curr = obtener_base_kanbans(forzar=True)
             
             if not material or puesto_destino in ["-- Seleccionar --", ""]:
                 st.error("❌ Error: Código de Material y Puesto Destino son campos obligatorios.")
@@ -692,13 +718,13 @@ if tab_crear:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ==========================================
-# VISTA: MODIFICAR Y ELIMINAR (AUTO-LLENADO & ALERTAS)
+# VISTA: MODIFICAR Y ELIMINAR
 # ==========================================
 tab_mod = obtener_tab("✏️ Modificar y Eliminar")
 if tab_mod:
     with tab_mod:
         st.subheader("✏️ Modificar y Eliminar Kanban")
-        df_live = obtener_base_kanbans()
+        df_live = obtener_base_kanbans(forzar=True)
         
         if 'msg_exito_mod' in st.session_state:
             st.success(st.session_state.pop('msg_exito_mod'))
@@ -842,23 +868,37 @@ if tab_mod:
                 st.rerun()
 
 # ==========================================
-# VISTAS GENERALES: CONSULTA / EXPORTAR / LOGS / PERFIL
+# VISTA UNIFICADA: CONSULTA Y EXPORTAR TABLA Z (SAP)
 # ==========================================
-tab_consulta = obtener_tab("📋 Consulta General")
-if tab_consulta:
-    with tab_consulta:
-        st.subheader("📋 Consulta General de Kanbans (En Vivo)")
-        st.dataframe(obtener_base_kanbans(forzar=True), use_container_width=True)
-
-tab_export = obtener_tab("📊 Exportar Datos") or obtener_tab("📊 Exportar Datos para SAP")
+tab_export = obtener_tab("📊 Consulta y Exportar Tabla Z (SAP)")
 if tab_export:
     with tab_export:
-        st.subheader("📊 Exportar Tabla Z Completa para SAP")
-        
+        st.subheader("📊 Consulta y Exportación de Tabla Z (SAP)")
         df_export_live = obtener_base_kanbans(forzar=True)
         
-        st.caption(f"⚡ Esta vista contiene {len(df_export_live)} registros actualizados en tiempo real para todos los roles.")
-        st.dataframe(df_export_live, use_container_width=True)
+        # BUSCADOR Y FILTROS EN TIEMPO REAL
+        with st.expander("🔍 Filtros de Búsqueda de Tabla Z", expanded=True):
+            f_col1, f_col2, f_col3 = st.columns(3)
+            with f_col1:
+                q_txt = st.text_input("Buscar por Material o Código K:", placeholder="Ej. PB005075 o K00000001", key="tz_search").upper().strip()
+            with f_col2:
+                q_alm = st.selectbox("Filtrar por Almacén Destino:", ["Todos"] + list(df_export_live['Almacen Destino'].dropna().unique()), key="tz_alm")
+            with f_col3:
+                q_tipo = st.selectbox("Filtrar por Tipo Kanban:", ["Todos", "GAVETA", "TARJETA"], key="tz_tipo")
+
+        df_tz_filtered = df_export_live.copy()
+        if q_txt:
+            df_tz_filtered = df_tz_filtered[
+                (df_tz_filtered['Material'].astype(str).str.contains(q_txt, na=False)) |
+                (df_tz_filtered['N° Etiquetas'].astype(str).str.contains(q_txt, na=False))
+            ]
+        if q_alm != "Todos":
+            df_tz_filtered = df_tz_filtered[df_tz_filtered['Almacen Destino'] == q_alm]
+        if q_tipo != "Todos":
+            df_tz_filtered = df_tz_filtered[df_tz_filtered['Tipo Kanban'] == q_tipo]
+
+        st.caption(f"⚡ Mostrando **{len(df_tz_filtered)}** registros de un total de **{len(df_export_live)}** activos.")
+        st.dataframe(df_tz_filtered, use_container_width=True)
         
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -866,13 +906,16 @@ if tab_export:
         excel_bytes = output.getvalue()
         
         st.download_button(
-            label="📥 Descargar Tabla Z Actualizada (.xlsx)", 
+            label="📥 Descargar Tabla Z Completa (.xlsx)", 
             data=excel_bytes, 
             file_name="TablaZ_Kanbans_Actualizada.xlsx", 
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
             type="primary"
         )
 
+# ==========================================
+# HISTORIAL Y PERFIL
+# ==========================================
 tab_historial = obtener_tab("📜 Historial Auditoría")
 if tab_historial:
     with tab_historial:
@@ -888,9 +931,6 @@ if tab_historial:
                     st.success("✅ Historiales y Tracker limpiados correctamente. ¡El sistema está listo para el arranque!")
                     st.rerun()
 
-# ==========================================
-# VISTA: MI PERFIL Y GESTIÓN DE CUENTA
-# ==========================================
 tab_perfil = obtener_tab("👤 Mi Perfil")
 if tab_perfil:
     with tab_perfil:
