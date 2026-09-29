@@ -262,7 +262,6 @@ if not st.session_state['usuario_email']:
 # MANEJO CENTRALIZADO CON PERSISTENCIA VIVA
 # ==========================================
 def cargar_base_desde_disco():
-    # 1. Priorizar lectura desde la base de datos viva sincronizada en CSV
     if os.path.exists(LIVE_DB_FILE):
         try:
             df = pd.read_csv(LIVE_DB_FILE, dtype=str)
@@ -275,10 +274,9 @@ def cargar_base_desde_disco():
         except Exception:
             pass
 
-    # 2. Si no existe la base viva, tomar TablaZ.xlsx como punto de partida inicial
     if os.path.exists(DB_FILE):
         try:
-            df = pd.read_excel(DB_FILE, sheet_name=SHEET_NAME)
+            df = pd.read_excel(DB_FILE, sheet_name=SHEET_NAME, dtype=str)
             for col in COLUMNS:
                 if col not in df.columns:
                     df[col] = None
@@ -297,7 +295,6 @@ def cargar_base_desde_disco():
                 return "TARJETA"
             df['Tipo Kanban'] = df.apply(determinar_tipo_kanban, axis=1)
             df = df[COLUMNS].reset_index(drop=True)
-            # Guardar la base inicial viva
             df.to_csv(LIVE_DB_FILE, index=False)
             return df
         except Exception:
@@ -310,16 +307,14 @@ def obtener_base_kanbans(forzar=False):
     return st.session_state['df_kanbans_global']
 
 def actualizar_base_kanbans(nuevo_df):
-    df_limpio = nuevo_df.reset_index(drop=True)
+    df_limpio = nuevo_df.astype(str).reset_index(drop=True)
     st.session_state['df_kanbans_global'] = df_limpio
     
-    # Persistir inmediatamente en CSV para mantener sincronización entre sesiones/usuarios
     try:
         df_limpio.to_csv(LIVE_DB_FILE, index=False)
     except Exception as e:
         st.error(f"⚠️ Error en persistencia CSV viva: {e}")
 
-    # Intentar actualizar también el Excel físico de respaldo
     try:
         with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:
             df_limpio.to_excel(writer, sheet_name=SHEET_NAME, index=False)
@@ -364,9 +359,9 @@ def registrar_log(accion, codigo_k, material, medio, alm_dest, puesto_dest, usua
     accion_norm = mapeo_guardado.get(accion, accion)
 
     nuevo_log = pd.DataFrame([{
-        "Fecha_Hora": now, "Acción": accion_norm, "Código_K": codigo_k,
-        "Material": material, "Medio": str(medio), "Almacén_Destino": alm_dest,
-        "Puesto_Destino": puesto_dest, "Usuario": usuario
+        "Fecha_Hora": now, "Acción": accion_norm, "Código_K": str(codigo_k),
+        "Material": str(material), "Medio": str(medio), "Almacén_Destino": str(alm_dest),
+        "Puesto_Destino": str(puesto_dest), "Usuario": str(usuario)
     }])
     df_final = pd.concat([df_actual, nuevo_log], ignore_index=True)
     df_final.to_csv(LOG_FILE, index=False)
@@ -531,7 +526,7 @@ if tab_kpis:
             fi, ff = rango_fechas_kpi
             df_logs_filtrado = df_logs_filtrado[(df_logs_filtrado['Fecha_dt'].dt.date >= fi) & (df_logs_filtrado['Fecha_dt'].dt.date <= ff)]
             if f_alm != "Todos": df_logs_filtrado = df_logs_filtrado[df_logs_filtrado['Almacén_Destino'] == f_alm]
-            if f_usr != "Todos": df_logs_filtrado = df_logs_filtrado[df_usr]
+            if f_usr != "Todos": df_logs_filtrado = df_logs_filtrado[df_logs_filtrado['Usuario'] == f_usr]
 
         c_creados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'CREACIÓN']) if not df_logs_filtrado.empty else 0
         c_actualizados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'MODIFICACIÓN']) if not df_logs_filtrado.empty else 0
@@ -700,11 +695,11 @@ if tab_crear:
                     'Almacen Destino': str(almacen_destino),
                     'Puesto trabajo Origen': str(puesto_origen) if puesto_origen else "-", 
                     'Puesto de trabajo destino': str(puesto_destino),
-                    'Cantidad Reposicion': cant_repo, 
+                    'Cantidad Reposicion': str(cant_repo), 
                     'Unidad Reposicion': str(unidad),
-                    'Cantidad Punto de Pedido': cant_pp, 
-                    'Tiempo preparación abast. (en días)': dias_prep,
-                    'Fecha Modificación': fecha_actual, 
+                    'Cantidad Punto de Pedido': str(cant_pp), 
+                    'Tiempo preparación abast. (en días)': str(dias_prep),
+                    'Fecha Modificación': str(fecha_actual), 
                     'Usuario Modificación': str(usr_act)
                 }
                 
@@ -718,7 +713,7 @@ if tab_crear:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ==========================================
-# VISTA: MODIFICAR Y ELIMINAR
+# VISTA: MODIFICAR Y ELIMINAR (CONVERSIÓN DINÁMICA & CONTROLES DE PUNTO DE PEDIDO)
 # ==========================================
 tab_mod = obtener_tab("✏️ Modificar y Eliminar")
 if tab_mod:
@@ -756,10 +751,12 @@ if tab_mod:
                     
                     st.caption(f"📌 Editando **{k_sel}** — Material: **{row['Material']}**")
                     
+                    # --- PRECARGA DE DATOS EXISTENTES ---
                     val_centro = str(row['Centro']) if pd.notna(row['Centro']) else "A110"
                     tipo_k_curr = str(row['Tipo Kanban']).upper() if pd.notna(row['Tipo Kanban']) else "TARJETA"
                     idx_tipo_k = 0 if "GAVETA" in tipo_k_curr else 1
-                    medio_curr = str(row['Medio']) if pd.notna(row['Medio']) else "SIN MEDIO DEFINIDO"
+                    
+                    medio_curr = str(row['Medio']).strip() if pd.notna(row['Medio']) and str(row['Medio']).strip() not in ["nan", "None", ""] else "SIN MEDIO DEFINIDO"
                     
                     alm_o_curr = str(row['Almacén Origen']) if pd.notna(row['Almacén Origen']) and str(row['Almacén Origen']) in LISTA_ALMACENES else "L010"
                     alm_d_curr = str(row['Almacen Destino']) if pd.notna(row['Almacen Destino']) and str(row['Almacen Destino']) in LISTA_ALMACENES else "P140"
@@ -775,7 +772,7 @@ if tab_mod:
                     un_curr = str(row['Unidad Reposicion']).upper() if pd.notna(row['Unidad Reposicion']) and str(row['Unidad Reposicion']).upper() in unidades_validas else "UN"
                     idx_un = unidades_validas.index(un_curr)
                     
-                    try: val_dias = int(row['Tiempo preparación abast. (en días)'])
+                    try: val_dias = int(float(row['Tiempo preparación abast. (en días)']))
                     except (ValueError, TypeError): val_dias = 1
 
                     m_col1, m_col2, m_col3 = st.columns(3)
@@ -783,9 +780,10 @@ if tab_mod:
                         m_centro = st.text_input("Centro", value=val_centro, key=f"m_c_{k_sel}")
                         m_tipo_soporte = st.selectbox("Tipo de Kanban", ["GAVETA", "TARJETA"], index=idx_tipo_k, key=f"m_ts_{k_sel}")
                         
+                        # --- SELECCIÓN DINÁMICA DEL MEDIO ---
                         if m_tipo_soporte == "GAVETA":
                             tam_gav_curr = medio_curr.replace("GAVETA", "").strip()
-                            idx_gav = OPCIONES_GAVETA.index(tam_gav_curr) if tam_gav_curr in OPCIONES_GAVETA else 0
+                            idx_gav = OPCIONES_GAVETA.index(tam_gav_curr) if tam_gav_curr in OPCIONES_GAVETA else 1 # 'M' por defecto
                             m_medio_str = f"GAVETA {st.selectbox('Tamaño Gaveta', OPCIONES_GAVETA, index=idx_gav, key=f'm_gav_{k_sel}')}"
                         else:
                             idx_med = OPCIONES_SOPORTE_TARJETA.index(medio_curr) if medio_curr in OPCIONES_SOPORTE_TARJETA else 0
@@ -799,10 +797,12 @@ if tab_mod:
                     with m_col3:
                         m_cant_repo = st.number_input("Cantidad Reposición", min_value=0.0, value=val_repo, step=1.0, key=f"m_cr_{k_sel}")
                         
+                        # --- HABILITACIÓN DINÁMICA DEL PUNTO DE PEDIDO ---
                         if m_tipo_soporte == "GAVETA":
                             m_cant_pp = st.number_input("Cantidad Punto Pedido", value=m_cant_repo, disabled=True, key=f"m_pp_g_{k_sel}")
                         else:
-                            m_cant_pp = st.number_input("Cantidad Punto Pedido", min_value=0.0, value=val_pp, step=1.0, key=f"m_pp_t_{k_sel}")
+                            # Habilitado para edición libre cuando es TARJETA
+                            m_cant_pp = st.number_input("Cantidad Punto Pedido", min_value=0.0, value=val_pp, disabled=False, step=1.0, key=f"m_pp_t_{k_sel}")
                             
                         m_unidad = st.selectbox("Unidad Base", unidades_validas, index=idx_un, key=f"m_un_{k_sel}")
                         m_dias_prep = st.number_input("Tiempo Preparación / Días", min_value=0, value=val_dias, key=f"m_dias_{k_sel}")
@@ -810,24 +810,25 @@ if tab_mod:
                     if st.button("💾 Guardar Cambios de Kanban", type="primary", key=f"btn_save_{k_sel}"):
                         if not m_puesto_destino:
                             st.error("❌ Error: El Puesto Destino no puede estar vacío.")
+                        # VALIDACIÓN DE REGLA DE NEGOCIO PARA TARJETA
                         elif m_tipo_soporte == "TARJETA" and float(m_cant_pp) >= float(m_cant_repo):
-                            st.error(f"🚫 ERROR EN MODIFICACIÓN: En Kanbans tipo TARJETA, el Punto de Pedido ({m_cant_pp}) DEBE SER ESTRICTAMENTE MENOR a la Cantidad de Reposición ({m_cant_repo}). No se aplicaron cambios.")
+                            st.error(f"🚫 ACCIÓN BLOQUEADA: En Kanbans tipo TARJETA, el Punto de Pedido ({m_cant_pp}) DEBE SER ESTRICTAMENTE MENOR a la Cantidad de Reposición ({m_cant_repo}). No se aplicaron cambios.")
                         else:
                             usr_act = st.session_state['usuario_email']
                             idx = df_live[df_live['N° Etiquetas'] == k_sel].index[0]
                             
-                            df_live.loc[idx, 'Centro'] = m_centro
-                            df_live.loc[idx, 'Tipo Kanban'] = m_tipo_soporte
-                            df_live.loc[idx, 'Medio'] = m_medio_str
-                            df_live.loc[idx, 'Almacén Origen'] = m_almacen_origen
-                            df_live.loc[idx, 'Almacen Destino'] = m_almacen_destino
-                            df_live.loc[idx, 'Puesto de trabajo destino'] = m_puesto_destino
-                            df_live.loc[idx, 'Cantidad Reposicion'] = m_cant_repo
-                            df_live.loc[idx, 'Cantidad Punto de Pedido'] = m_cant_pp
-                            df_live.loc[idx, 'Unidad Reposicion'] = m_unidad
-                            df_live.loc[idx, 'Tiempo preparación abast. (en días)'] = m_dias_prep
-                            df_live.loc[idx, 'Fecha Modificación'] = obtener_fecha_hora_arg()
-                            df_live.loc[idx, 'Usuario Modificación'] = usr_act
+                            df_live.loc[idx, 'Centro'] = str(m_centro)
+                            df_live.loc[idx, 'Tipo Kanban'] = str(m_tipo_soporte)
+                            df_live.loc[idx, 'Medio'] = str(m_medio_str)
+                            df_live.loc[idx, 'Almacén Origen'] = str(m_almacen_origen)
+                            df_live.loc[idx, 'Almacen Destino'] = str(m_almacen_destino)
+                            df_live.loc[idx, 'Puesto de trabajo destino'] = str(m_puesto_destino)
+                            df_live.loc[idx, 'Cantidad Reposicion'] = str(m_cant_repo)
+                            df_live.loc[idx, 'Cantidad Punto de Pedido'] = str(m_cant_pp)
+                            df_live.loc[idx, 'Unidad Reposicion'] = str(m_unidad)
+                            df_live.loc[idx, 'Tiempo preparación abast. (en días)'] = str(m_dias_prep)
+                            df_live.loc[idx, 'Fecha Modificación'] = str(obtener_fecha_hora_arg())
+                            df_live.loc[idx, 'Usuario Modificación'] = str(usr_act)
                             
                             mat_mod = str(df_live.loc[idx, 'Material'])
                             actualizar_base_kanbans(df_live)
@@ -876,7 +877,6 @@ if tab_export:
         st.subheader("📊 Consulta y Exportación de Tabla Z (SAP)")
         df_export_live = obtener_base_kanbans(forzar=True)
         
-        # BUSCADOR Y FILTROS EN TIEMPO REAL
         with st.expander("🔍 Filtros de Búsqueda de Tabla Z", expanded=True):
             f_col1, f_col2, f_col3 = st.columns(3)
             with f_col1:
