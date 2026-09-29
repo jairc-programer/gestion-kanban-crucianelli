@@ -189,9 +189,8 @@ ALMACENES_PUESTOS = {
 }
 
 LISTA_ALMACENES = list(ALMACENES_PUESTOS.keys())
-
 OPCIONES_SOPORTE_TARJETA = ["SIN MEDIO DEFINIDO", "PALLET CHICO", "PALLET GRANDE", "CANASTO", "CAPACHO CHICO", "CAPACHO GRANDE", "RACK"]
-OPCIONES_GAVETA = ["S", "M", "L", "XL"]
+OPCIONES_GAVETA = ["GAVETA S", "GAVETA M", "GAVETA L", "GAVETA XL", "S", "M", "L", "XL"]
 
 if 'usuario_email' not in st.session_state:
     st.session_state['usuario_email'] = None
@@ -332,82 +331,17 @@ def actualizar_base_kanbans(nuevo_df):
         pass
 
 def cargar_packaging():
-    """
-    Carga el archivo Excel de Packaging flexibilizando la detección de columnas.
-    Busca columnas de Material, Lote (Packaging), Unidad y Medio.
-    """
     if os.path.exists(PKG_FILE):
         try:
             df = pd.read_excel(PKG_FILE)
-            cols_upper = {str(c).strip().upper(): c for c in df.columns}
+            df['Material'] = df['Material'].astype(str).str.strip().str.upper()
             
-            # 1. Búsqueda de Columna Material
-            mat_col = None
-            for k in ['MATERIAL', 'CODIGO', 'CÓDIGO', 'MATERIAL (CÓDIGO SAP)', 'MAT', 'CODIGO MATERIAL']:
-                if k in cols_upper:
-                    mat_col = cols_upper[k]
-                    break
-            if not mat_col and len(df.columns) > 0:
-                mat_col = df.columns[0]
-
-            # 2. Búsqueda de Columna Lote
-            lote_col = None
-            for k in ['LOTE PACKAGING', 'LOTE', 'LOTE PACKING', 'CANTIDAD', 'LOTE REPOSICION', 'LOTE DE PACKAGING', 'PACKAGING LOTE', 'CANTIDAD REPOSICION', 'LOTE_PACKAGING', 'LOTE PACKAING', 'PACKAING LOTE']:
-                if k in cols_upper:
-                    lote_col = cols_upper[k]
-                    break
-
-            # 3. Búsqueda de Columna UM
-            um_col = None
-            for k in ['UNIDAD', 'UM', 'UNIDAD REPOSICION', 'UNIDAD DE MEDIDA', 'UNIDAD REPOSICIÓN']:
-                if k in cols_upper:
-                    um_col = cols_upper[k]
-                    break
-
-            # 4. Búsqueda de Columna Medio / Packaging
-            medio_col = None
-            for k in ['PACKAGING', 'PACKAING', 'MEDIO', 'SOPORTE', 'MEDIO/PACKAGING']:
-                if k in cols_upper:
-                    medio_col = cols_upper[k]
-                    break
-
             dict_pkg = {}
             for _, r in df.iterrows():
-                if mat_col and pd.notna(r[mat_col]):
-                    mat = str(r[mat_col]).strip().upper()
-                    if not mat or mat == "NAN":
-                        continue
-                    
-                    # Lote
-                    lote_val = 1.0
-                    if lote_col and pd.notna(r[lote_col]):
-                        try:
-                            val_clean = str(r[lote_col]).replace(',', '.').strip()
-                            val_f = float(val_clean)
-                            if val_f > 0:
-                                lote_val = val_f
-                        except (ValueError, TypeError):
-                            pass
-
-                    # UM
-                    um_val = "ST"
-                    if um_col and pd.notna(r[um_col]):
-                        u_clean = str(r[um_col]).strip().upper()
-                        if u_clean and u_clean != "NAN":
-                            um_val = u_clean
-
-                    # Medio
-                    medio_val = ""
-                    if medio_col and pd.notna(r[medio_col]):
-                        m_clean = str(r[medio_col]).strip()
-                        if m_clean and m_clean.upper() != "NAN":
-                            medio_val = m_clean
-
-                    dict_pkg[mat] = {
-                        "medio": medio_val,
-                        "unidad": um_val,
-                        "lote": lote_val
-                    }
+                mat = r['Material']
+                medio_val = str(r.get('Packaging', r.get('Packaing', r.get('Medio', '')))).strip()
+                unid_val = str(r.get('Unidad', r.get('UM', r.get('Unidad Reposicion', 'ST')))).strip().upper()
+                dict_pkg[mat] = {"medio": medio_val, "unidad": unid_val if unid_val != 'NAN' else 'ST'}
             return dict_pkg
         except Exception:
             return {}
@@ -502,6 +436,8 @@ def obtener_siguiente_codigo_k(df):
         return "K00000001"
     
     numeros = [int(m.group(0)) for val in df['N° Etiquetas'].dropna() if (m := re.search(r'\d+', str(val)))]
+    if not numeros:
+        return "K00000001"
     set_numeros = set(numeros)
     
     i = 1
@@ -590,14 +526,19 @@ if tab_kpis:
         df_k_live = obtener_base_kanbans()
         df_tr_kpi = cargar_tracker()
         
+        # --- FILTROS GLOBALES DE KPIS ---
         with st.expander("🔍 Filtros de Análisis", expanded=True):
             f_col1, f_col2, f_col3 = st.columns(3)
             
             with f_col1:
                 if not df_logs_kpi.empty and 'Fecha_Hora' in df_logs_kpi.columns:
                     df_logs_kpi['Fecha_dt'] = pd.to_datetime(df_logs_kpi['Fecha_Hora'], errors='coerce')
-                    min_d = df_logs_kpi['Fecha_dt'].dropna().min().date()
-                    max_d = df_logs_kpi['Fecha_dt'].dropna().max().date()
+                    fechas_validas = df_logs_kpi['Fecha_dt'].dropna()
+                    if not fechas_validas.empty:
+                        min_d = fechas_validas.min().date()
+                        max_d = fechas_validas.max().date()
+                    else:
+                        min_d = max_d = datetime.now().date()
                 else:
                     min_d = max_d = datetime.now().date()
                 rango_fechas_kpi = st.date_input("Rango de Fechas (Historial):", value=(min_d, max_d), key="kpi_dates")
@@ -617,6 +558,7 @@ if tab_kpis:
                         puestos_disp += sorted([str(x) for x in df_k_live['Puesto de trabajo destino'].dropna().unique() if str(x).strip() != ""])
                 f_puesto = st.selectbox("Puesto de Trabajo Destino:", puestos_disp, key="kpi_puesto")
 
+        # --- FILTRADO DE DATOS VIVOS (BASE KANBANS) ---
         df_k_filtrado = df_k_live.copy() if not df_k_live.empty else pd.DataFrame()
         if not df_k_filtrado.empty:
             if f_alm != "Todos":
@@ -624,15 +566,18 @@ if tab_kpis:
             if f_puesto != "Todos":
                 df_k_filtrado = df_k_filtrado[df_k_filtrado['Puesto de trabajo destino'] == f_puesto]
 
+        # --- FILTRADO DE LOGS DE AUDITORÍA ---
         df_logs_filtrado = df_logs_kpi.copy() if not df_logs_kpi.empty else pd.DataFrame()
         if not df_logs_filtrado.empty and isinstance(rango_fechas_kpi, tuple) and len(rango_fechas_kpi) == 2:
             fi, ff = rango_fechas_kpi
-            df_logs_filtrado = df_logs_filtrado[(df_logs_filtrado['Fecha_dt'].dt.date >= fi) & (df_logs_filtrado['Fecha_dt'].dt.date <= ff)]
+            if 'Fecha_dt' in df_logs_filtrado.columns:
+                df_logs_filtrado = df_logs_filtrado[(df_logs_filtrado['Fecha_dt'].dt.date >= fi) & (df_logs_filtrado['Fecha_dt'].dt.date <= ff)]
             if f_alm != "Todos" and 'Almacén_Destino' in df_logs_filtrado.columns: 
                 df_logs_filtrado = df_logs_filtrado[df_logs_filtrado['Almacén_Destino'] == f_alm]
             if f_puesto != "Todos" and 'Puesto_Destino' in df_logs_filtrado.columns: 
                 df_logs_filtrado = df_logs_filtrado[df_logs_filtrado['Puesto_Destino'] == f_puesto]
 
+        # --- FILTRADO DEL TRACKER LOGÍSTICO ---
         df_tr_filtrado = df_tr_kpi.copy() if not df_tr_kpi.empty else pd.DataFrame()
         if not df_tr_filtrado.empty and f_puesto != "Todos" and 'Puesto_Destino' in df_tr_filtrado.columns:
             df_tr_filtrado = df_tr_filtrado[df_tr_filtrado['Puesto_Destino'] == f_puesto]
@@ -703,19 +648,23 @@ if tab_kpis:
 
         with g_col3:
             st.markdown("##### 📈 Evolución de Movimientos (Mensual)")
-            if not df_logs_filtrado.empty:
-                df_logs_filtrado['Mes'] = df_logs_filtrado['Fecha_dt'].dt.strftime('%b %Y')
-                df_logs_filtrado['Mes_Sort'] = df_logs_filtrado['Fecha_dt'].dt.to_period('M')
-                
-                df_evolucion = df_logs_filtrado.groupby(['Mes_Sort', 'Mes']).size().reset_index(name='Record Count').sort_values('Mes_Sort')
-                
-                fig_evol = px.line(
-                    df_evolucion, x='Mes', y='Record Count',
-                    markers=True, template="plotly_dark", line_shape="spline"
-                )
-                fig_evol.update_traces(line_color="#38bdf8", fill='tozeroy', fillcolor='rgba(56, 189, 248, 0.1)')
-                fig_evol.update_layout(height=350, margin=dict(l=20, r=20, t=20, b=20), xaxis_title="", yaxis_title="Record Count")
-                st.plotly_chart(fig_evol, use_container_width=True)
+            if not df_logs_filtrado.empty and 'Fecha_dt' in df_logs_filtrado.columns:
+                df_logs_valid = df_logs_filtrado.dropna(subset=['Fecha_dt']).copy()
+                if not df_logs_valid.empty:
+                    df_logs_valid['Mes'] = df_logs_valid['Fecha_dt'].dt.strftime('%b %Y')
+                    df_logs_valid['Mes_Sort'] = df_logs_valid['Fecha_dt'].dt.to_period('M')
+                    
+                    df_evolucion = df_logs_valid.groupby(['Mes_Sort', 'Mes']).size().reset_index(name='Record Count').sort_values('Mes_Sort')
+                    
+                    fig_evol = px.line(
+                        df_evolucion, x='Mes', y='Record Count',
+                        markers=True, template="plotly_dark", line_shape="spline"
+                    )
+                    fig_evol.update_traces(line_color="#38bdf8", fill='tozeroy', fillcolor='rgba(56, 189, 248, 0.1)')
+                    fig_evol.update_layout(height=350, margin=dict(l=20, r=20, t=20, b=20), xaxis_title="", yaxis_title="Record Count")
+                    st.plotly_chart(fig_evol, use_container_width=True)
+                else:
+                    st.info("Sin registros de movimientos en el rango seleccionado.")
             else:
                 st.info("Sin registros de movimientos en el rango seleccionado.")
 
@@ -732,31 +681,35 @@ if tab_kpis:
                 df_tr_f['Días Impresión a Finalización'] = (df_tr_f['f_fin'] - df_tr_f['f_imp']).dt.days
                 df_tr_f['Días Totales de Resolución'] = (df_tr_f['f_fin'] - df_tr_f['f_sol']).dt.days
 
-                df_tr_f['Mes_dt'] = df_tr_f['f_sol'].dt.to_period('M')
-                df_tr_f['Mes'] = df_tr_f['f_sol'].dt.strftime('%b %Y')
-                
-                df_tiempos_mes = df_tr_f.groupby(['Mes_dt', 'Mes'])[[
-                    'Días Carga a Impresión', 
-                    'Días Impresión a Finalización', 
-                    'Días Totales de Resolución'
-                ]].mean().reset_index().sort_values('Mes_dt')
+                df_tr_valid = df_tr_f.dropna(subset=['f_sol']).copy()
+                if not df_tr_valid.empty:
+                    df_tr_valid['Mes_dt'] = df_tr_valid['f_sol'].dt.to_period('M')
+                    df_tr_valid['Mes'] = df_tr_valid['f_sol'].dt.strftime('%b %Y')
+                    
+                    df_tiempos_mes = df_tr_valid.groupby(['Mes_dt', 'Mes'])[[
+                        'Días Carga a Impresión', 
+                        'Días Impresión a Finalización', 
+                        'Días Totales de Resolución'
+                    ]].mean().reset_index().sort_values('Mes_dt')
 
-                if not df_tiempos_mes.empty:
-                    fig_time = px.line(
-                        df_tiempos_mes, x='Mes', 
-                        y=['Días Totales de Resolución', 'Días Carga a Impresión', 'Días Impresión a Finalización'],
-                        markers=True, template="plotly_dark", line_shape="spline",
-                        labels={'value': 'Días Promedio', 'variable': 'Métrica'},
-                        color_discrete_map={
-                            'Días Totales de Resolución': '#3b82f6', 
-                            'Días Carga a Impresión': '#f59e0b',
-                            'Días Impresión a Finalización': '#a855f7'
-                        }
-                    )
-                    fig_time.update_layout(height=350, margin=dict(l=20, r=20, t=20, b=20), xaxis_title="", yaxis_title="Días", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
-                    st.plotly_chart(fig_time, use_container_width=True)
+                    if not df_tiempos_mes.empty:
+                        fig_time = px.line(
+                            df_tiempos_mes, x='Mes', 
+                            y=['Días Totales de Resolución', 'Días Carga a Impresión', 'Días Impresión a Finalización'],
+                            markers=True, template="plotly_dark", line_shape="spline",
+                            labels={'value': 'Días Promedio', 'variable': 'Métrica'},
+                            color_discrete_map={
+                                'Días Totales de Resolución': '#3b82f6', 
+                                'Días Carga a Impresión': '#f59e0b',
+                                'Días Impresión a Finalización': '#a855f7'
+                            }
+                        )
+                        fig_time.update_layout(height=350, margin=dict(l=20, r=20, t=20, b=20), xaxis_title="", yaxis_title="Días", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                        st.plotly_chart(fig_time, use_container_width=True)
+                    else:
+                        st.info("Aún no hay solicitudes suficientes para calcular promedios de respuesta.")
                 else:
-                    st.info("Aún no hay solicitudes suficientes para calcular promedios de respuesta.")
+                    st.info("Aún no hay solicitudes suficientes con fechas válidas.")
             else:
                 st.info("El Tracker de Ejecución Logística no contiene registros.")
 
@@ -904,49 +857,21 @@ if tab_crear:
         
         col1, col2 = st.columns(2)
         
-        # Inicializar variables de estado para reactividad
-        if 'c_cant_repo' not in st.session_state:
-            st.session_state['c_cant_repo'] = 10.0
-        if 'c_unid_repo' not in st.session_state:
-            st.session_state['c_unid_repo'] = "ST"
-        if 'last_searched_mat' not in st.session_state:
-            st.session_state['last_searched_mat'] = ""
-
         with col1:
             tipo_etiqueta = st.selectbox("Tipo de Etiqueta:", ["KI", "KE"], key="c_tipo_etiq")
             material_input = st.text_input("Material (Código SAP):", key="c_mat_input").strip().upper()
             
+            # Búsqueda automática en Lote Packaging
             info_pkg = dict_pkg.get(material_input, {})
             um_sugerida = info_pkg.get('unidad', 'ST')
             medio_pkg_sugerido = info_pkg.get('medio', '')
-            lote_pkg_sugerido = float(info_pkg.get('lote', 1.0))
             
-            # Al cambiar de material, sincroniza automáticamente el Lote Sugerido al campo de edición
-            if material_input and material_input != st.session_state['last_searched_mat']:
-                st.session_state['last_searched_mat'] = material_input
-                if info_pkg:
-                    st.session_state['c_cant_repo'] = lote_pkg_sugerido
-                    st.session_state['c_unid_repo'] = um_sugerida
-                else:
-                    st.session_state['c_cant_repo'] = 1.0
-                    st.session_state['c_unid_repo'] = "ST"
-                st.rerun()
-
-            if material_input:
-                if info_pkg:
-                    st.caption(f"ℹ️ Material en packaging: **UM:** {um_sugerida} | **Lote Packaging / Reposición Sugerido:** {lote_pkg_sugerido}")
-                else:
-                    st.caption("ℹ️ Material no encontrado en la planilla de packaging (Se asignan valores por defecto).")
+            if material_input and info_pkg:
+                st.caption(f"ℹ️ Material encontrado en packaging: **UM Base:** {um_sugerida}")
 
             centro = st.text_input("Centro:", value="A110", disabled=True, help="El centro de producción es fijo: A110")
-            
-            # REGLA KANBAN KE: Almacén Origen L010 y Puesto PRINCIPAL fijos
-            if tipo_etiqueta == "KE":
-                alm_origen = st.text_input("Almacén Origen:", value="L010", disabled=True, key="c_alm_orig_dis")
-                puesto_origen = st.text_input("Puesto trabajo Origen:", value="PRINCIPAL", disabled=True, key="c_puesto_orig_dis")
-            else:
-                alm_origen = st.selectbox("Almacén Origen:", LISTA_ALMACENES, index=0, key="c_alm_orig")
-                puesto_origen = st.text_input("Puesto trabajo Origen:", key="c_puesto_orig").strip().upper()
+            alm_origen = st.selectbox("Almacén Origen:", LISTA_ALMACENES, index=0, key="c_alm_orig")
+            puesto_origen = st.text_input("Puesto trabajo Origen:", key="c_puesto_orig").strip().upper()
             
         with col2:
             alm_destino = st.selectbox("Almacén Destino:", LISTA_ALMACENES, index=1, key="c_alm_dest")
@@ -955,29 +880,27 @@ if tab_crear:
             
             tipo_kanban = st.radio("Tipo de Kanban:", ["GAVETA", "TARJETA"], horizontal=True, key="c_tipo_kb")
             
-            # Opciones de Medio estrictas según Tipo de Kanban
+            # Selección dinámica de Medio según tipo de Kanban
             if tipo_kanban == "GAVETA":
                 lista_medios = OPCIONES_GAVETA
                 idx_default = 0
                 if medio_pkg_sugerido in lista_medios:
                     idx_default = lista_medios.index(medio_pkg_sugerido)
-                medio = st.selectbox("Medio:", lista_medios, index=idx_default, key="c_medio_gav")
+                medio = st.selectbox("Medio / Tamaño Gaveta:", lista_medios, index=idx_default, key="c_medio_gav")
             else:
                 lista_medios = OPCIONES_SOPORTE_TARJETA
                 idx_default = 0
                 if medio_pkg_sugerido in lista_medios:
                     idx_default = lista_medios.index(medio_pkg_sugerido)
-                medio = st.selectbox("Medio:", lista_medios, index=idx_default, key="c_medio_tarj")
+                medio = st.selectbox("Medio / Soporte Tarjeta:", lista_medios, index=idx_default, key="c_medio_tarj")
                 
         st.markdown("---")
         col_cant1, col_cant2, col_cant3 = st.columns(3)
         
         with col_cant1:
-            cant_repo = st.number_input("Cantidad Reposición:", min_value=1.0, step=1.0, key="c_cant_repo")
-
+            cant_repo = st.number_input("Cantidad Reposición:", min_value=1.0, step=1.0, value=10.0, key="c_cant_repo")
         with col_cant2:
-            unid_repo = st.text_input("Unidad Reposición:", key="c_unid_repo").strip().upper()
-            
+            unid_repo = st.text_input("Unidad Reposición:", value=um_sugerida, key="c_unid_repo").strip().upper()
         with col_cant3:
             if tipo_kanban == "GAVETA":
                 cant_pp = st.number_input("Cantidad Punto de Pedido:", value=cant_repo, disabled=True, help="En GAVETA, la Cantidad Punto de Pedido es idéntica a la Cantidad Reposición.", key="c_cant_pp_gav")
@@ -1055,16 +978,11 @@ if tab_mod:
                     with col1:
                         m_tipo_etiqueta = st.selectbox("Tipo Etiqueta:", ["KI", "KE"], index=0 if fila_k['Tipo Etiqueta'] == "KI" else 1, key="m_tipo_etiq")
                         m_material = st.text_input("Material:", value=str(fila_k['Material']), key="m_mat_in").strip().upper()
-                        
                         m_centro = st.text_input("Centro:", value="A110", disabled=True)
                         
-                        if m_tipo_etiqueta == "KE":
-                            m_alm_origen = st.text_input("Almacén Origen:", value="L010", disabled=True, key="m_alm_orig_ke")
-                            m_puesto_origen = st.text_input("Puesto trabajo Origen:", value="PRINCIPAL", disabled=True, key="m_puesto_orig_ke")
-                        else:
-                            idx_origen = LISTA_ALMACENES.index(fila_k['Almacén Origen']) if fila_k['Almacén Origen'] in LISTA_ALMACENES else 0
-                            m_alm_origen = st.selectbox("Almacén Origen:", LISTA_ALMACENES, index=idx_origen, key="m_alm_orig")
-                            m_puesto_origen = st.text_input("Puesto trabajo Origen:", value=str(fila_k['Puesto trabajo Origen']), key="m_puesto_orig").strip().upper()
+                        idx_origen = LISTA_ALMACENES.index(fila_k['Almacén Origen']) if fila_k['Almacén Origen'] in LISTA_ALMACENES else 0
+                        m_alm_origen = st.selectbox("Almacén Origen:", LISTA_ALMACENES, index=idx_origen, key="m_alm_orig")
+                        m_puesto_origen = st.text_input("Puesto trabajo Origen:", value=str(fila_k['Puesto trabajo Origen']), key="m_puesto_orig").strip().upper()
                         
                     with col2:
                         idx_dest = LISTA_ALMACENES.index(fila_k['Almacen Destino']) if fila_k['Almacen Destino'] in LISTA_ALMACENES else 0
@@ -1083,11 +1001,11 @@ if tab_mod:
                         if m_tipo_kanban == "GAVETA":
                             lista_m = OPCIONES_GAVETA
                             idx_med = lista_m.index(medio_act) if medio_act in lista_m else 0
-                            m_medio = st.selectbox("Medio:", lista_m, index=idx_med, key="m_medio_gav")
+                            m_medio = st.selectbox("Medio / Tamaño Gaveta:", lista_m, index=idx_med, key="m_medio_gav")
                         else:
                             lista_m = OPCIONES_SOPORTE_TARJETA
                             idx_med = lista_m.index(medio_act) if medio_act in lista_m else 0
-                            m_medio = st.selectbox("Medio:", lista_m, index=idx_med, key="m_medio_tarj")
+                            m_medio = st.selectbox("Medio / Soporte Tarjeta:", lista_m, index=idx_med, key="m_medio_tarj")
                             
                     st.markdown("---")
                     col_m_c1, col_m_c2, col_m_c3 = st.columns(3)
