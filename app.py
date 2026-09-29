@@ -497,17 +497,21 @@ def obtener_tab(nombre):
     return None
 
 # ==========================================
-# VISTA: PANEL KPIS
+# VISTA: PANEL KPIS & MÉTRICAS
 # ==========================================
 tab_kpis = obtener_tab("📈 Panel KPIs & Métricas")
 if tab_kpis:
     with tab_kpis:
         st.subheader("📊 Panel Interactivo de KPIs y Analítica")
+        
         df_logs_kpi = cargar_logs()
         df_k_live = obtener_base_kanbans()
+        df_tr_kpi = cargar_tracker()
         
+        # --- FILTROS GLOBALES DE KPIS ---
         with st.expander("🔍 Filtros de Análisis", expanded=True):
             f_col1, f_col2, f_col3 = st.columns(3)
+            
             with f_col1:
                 if not df_logs_kpi.empty:
                     df_logs_kpi['Fecha_dt'] = pd.to_datetime(df_logs_kpi['Fecha_Hora'], errors='coerce')
@@ -515,50 +519,170 @@ if tab_kpis:
                     max_d = df_logs_kpi['Fecha_dt'].dropna().max().date()
                 else:
                     min_d = max_d = datetime.now().date()
-                rango_fechas_kpi = st.date_input("Rango de Fechas:", value=(min_d, max_d), key="kpi_dates")
-            with f_col2:
-                f_alm = st.selectbox("Almacén Destino:", ["Todos"] + list(df_k_live['Almacen Destino'].dropna().unique()), key="kpi_alm")
-            with f_col3:
-                f_usr = st.selectbox("Usuario Responsable:", ["Todos"] + (list(df_logs_kpi['Usuario'].dropna().unique()) if not df_logs_kpi.empty else []), key="kpi_usr")
+                rango_fechas_kpi = st.date_input("Rango de Fechas (Historial):", value=(min_d, max_d), key="kpi_dates")
 
+            with f_col2:
+                almacenes_unicos = ["Todos"] + sorted([str(x) for x in df_k_live['Almacen Destino'].dropna().unique() if str(x).strip() != ""])
+                f_alm = st.selectbox("Almacén Destino:", almacenes_unicos, key="kpi_alm")
+
+            with f_col3:
+                if f_alm != "Todos":
+                    puestos_disp = ["Todos"] + sorted([str(x) for x in df_k_live[df_k_live['Almacen Destino'] == f_alm]['Puesto de trabajo destino'].dropna().unique() if str(x).strip() != ""])
+                else:
+                    puestos_disp = ["Todos"] + sorted([str(x) for x in df_k_live['Puesto de trabajo destino'].dropna().unique() if str(x).strip() != ""])
+                f_puesto = st.selectbox("Puesto de Trabajo Destino:", puestos_disp, key="kpi_puesto")
+
+        # --- FILTRADO DE DATOS VIVOS (BASE KANBANS) ---
+        df_k_filtrado = df_k_live.copy()
+        if f_alm != "Todos":
+            df_k_filtrado = df_k_filtrado[df_k_filtrado['Almacen Destino'] == f_alm]
+        if f_puesto != "Todos":
+            df_k_filtrado = df_k_filtrado[df_k_filtrado['Puesto de trabajo destino'] == f_puesto]
+
+        # --- FILTRADO DE LOGS DE AUDITORÍA ---
         df_logs_filtrado = df_logs_kpi.copy() if not df_logs_kpi.empty else pd.DataFrame()
         if not df_logs_filtrado.empty and isinstance(rango_fechas_kpi, tuple) and len(rango_fechas_kpi) == 2:
             fi, ff = rango_fechas_kpi
             df_logs_filtrado = df_logs_filtrado[(df_logs_filtrado['Fecha_dt'].dt.date >= fi) & (df_logs_filtrado['Fecha_dt'].dt.date <= ff)]
-            if f_alm != "Todos": df_logs_filtrado = df_logs_filtrado[df_logs_filtrado['Almacén_Destino'] == f_alm]
-            if f_usr != "Todos": df_logs_filtrado = df_logs_filtrado[df_logs_filtrado['Usuario'] == f_usr]
+            if f_alm != "Todos": 
+                df_logs_filtrado = df_logs_filtrado[df_logs_filtrado['Almacén_Destino'] == f_alm]
+            if f_puesto != "Todos": 
+                df_logs_filtrado = df_logs_filtrado[df_logs_filtrado['Puesto_Destino'] == f_puesto]
 
+        # --- FILTRADO DEL TRACKER ---
+        df_tr_filtrado = df_tr_kpi.copy() if not df_tr_kpi.empty else pd.DataFrame()
+        if not df_tr_filtrado.empty and f_puesto != "Todos":
+            df_tr_filtrado = df_tr_filtrado[df_tr_filtrado['Puesto_Destino'] == f_puesto]
+
+        # CÁLCULOS PENDIENTES DEL TRACKER
+        if not df_tr_filtrado.empty:
+            pend_sap = len(df_tr_filtrado[df_tr_filtrado['Cargado_SAP'] != 'SI'])
+            pend_fisico = len(df_tr_filtrado[df_tr_filtrado['Estado_Fisico'] != 'Entregado'])
+        else:
+            pend_sap = 0
+            pend_fisico = 0
+
+        # --- MÉTRICAS SUPERIORES (TARJETAS) ---
         c_creados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'CREACIÓN']) if not df_logs_filtrado.empty else 0
         c_actualizados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'MODIFICACIÓN']) if not df_logs_filtrado.empty else 0
         c_eliminados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'ELIMINACIÓN']) if not df_logs_filtrado.empty else 0
 
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Movimientos Período", len(df_logs_filtrado))
+        m1, m2, m3, m4, m5, m6 = st.columns(6)
+        m1.metric("KB Activos", len(df_k_filtrado))
         m2.metric("✨ Creados", c_creados)
         m3.metric("✏️ Modificados", c_actualizados)
         m4.metric("🗑️ Eliminados", c_eliminados)
+        m5.metric("⏳ Pendiente SAP", pend_sap, delta=f"{pend_sap} requeridos", delta_color="inverse")
+        m6.metric("🚚 Pend. Físico", pend_fisico, delta=f"{pend_fisico} requeridos", delta_color="inverse")
         st.markdown("---")
 
+        # --- FILA 1 DE GRÁFICOS ---
         g_col1, g_col2 = st.columns(2)
+        
         with g_col1:
-            st.markdown("##### 🏭 Top Puestos de Trabajo Destino")
-            df_puestos = df_k_live['Puesto de trabajo destino'].value_counts().reset_index()
-            df_puestos.columns = ['Puesto Destino', 'Cantidad']
-            fig_puestos = px.bar(df_puestos.head(10), x='Cantidad', y='Puesto Destino', orientation='h', text='Cantidad', template="plotly_dark", color='Cantidad', color_continuous_scale='Reds')
-            fig_puestos.update_layout(yaxis={'categoryorder': 'total ascending'}, height=320, margin=dict(l=20, r=20, t=20, b=20))
-            st.plotly_chart(fig_puestos, use_container_width=True)
+            st.markdown("##### 📍 Kanban por Puestos de Trabajo")
+            if not df_k_filtrado.empty:
+                df_puestos = df_k_filtrado['Puesto de trabajo destino'].value_counts().reset_index()
+                df_puestos.columns = ['Puesto Destino', 'Cantidad']
+                fig_puestos = px.bar(
+                    df_puestos.head(10), x='Cantidad', y='Puesto Destino', 
+                    orientation='h', text='Cantidad', template="plotly_dark", 
+                    color='Cantidad', color_continuous_scale='Reds'
+                )
+                fig_puestos.update_layout(yaxis={'categoryorder': 'total ascending'}, height=320, margin=dict(l=20, r=20, t=20, b=20))
+                st.plotly_chart(fig_puestos, use_container_width=True)
+            else:
+                st.info("No hay datos de Kanbans para mostrar con los filtros aplicados.")
 
         with g_col2:
+            st.markdown("##### 🏷️ Distribución por Tipo (Gaveta vs Tarjeta)")
+            if not df_k_filtrado.empty:
+                df_tipos = df_k_filtrado['Tipo Kanban'].value_counts().reset_index()
+                df_tipos.columns = ['Tipo', 'Cantidad']
+                fig_tipos = px.pie(
+                    df_tipos, names='Tipo', values='Cantidad', hole=0.4,
+                    template="plotly_dark", color='Tipo',
+                    color_discrete_map={'GAVETA': '#ef4444', 'TARJETA': '#3b82f6'}
+                )
+                fig_tipos.update_traces(textinfo='percent+label+value')
+                fig_tipos.update_layout(height=320, margin=dict(l=20, r=20, t=20, b=20))
+                st.plotly_chart(fig_tipos, use_container_width=True)
+            else:
+                st.info("No hay datos disponibles para el gráfico de tipos.")
+
+        st.markdown("---")
+
+        # --- FILA 2 DE GRÁFICOS ---
+        g_col3, g_col4 = st.columns(2)
+
+        with g_col3:
             st.markdown("##### 📈 Evolución de Movimientos")
             if not df_logs_filtrado.empty:
                 df_logs_filtrado['Fecha_Dia'] = df_logs_filtrado['Fecha_dt'].dt.strftime('%Y-%m-%d')
                 df_evolucion = df_logs_filtrado.groupby(['Fecha_Dia', 'Acción']).size().reset_index(name='Cantidad')
-                fig_evol = px.line(df_evolucion, x='Fecha_Dia', y='Cantidad', color='Acción', markers=True, template="plotly_dark", color_discrete_map={'CREACIÓN': '#10b981', 'MODIFICACIÓN': '#f59e0b', 'ELIMINACIÓN': '#ef4444'})
+                fig_evol = px.line(
+                    df_evolucion, x='Fecha_Dia', y='Cantidad', color='Acción', 
+                    markers=True, template="plotly_dark", 
+                    color_discrete_map={'CREACIÓN': '#10b981', 'MODIFICACIÓN': '#f59e0b', 'ELIMINACIÓN': '#ef4444'}
+                )
                 fig_evol.update_layout(height=320, margin=dict(l=20, r=20, t=20, b=20), xaxis_title="Fecha", yaxis_title="Operaciones")
                 st.plotly_chart(fig_evol, use_container_width=True)
             else:
-                st.info("Sin registros en este rango.")
+                st.info("Sin registros de movimientos en el rango seleccionado.")
 
+        with g_col4:
+            st.markdown("##### ⏱️ Tiempos de Respuesta Logística (Lead Time Tracker)")
+            if not df_tr_filtrado.empty:
+                df_tr_f = df_tr_filtrado.copy()
+
+                df_tr_f['f_sol'] = pd.to_datetime(df_tr_f['Fecha_Solicitud'], errors='coerce')
+                df_tr_f['f_imp'] = pd.to_datetime(df_tr_f['Fecha_Impresion'], errors='coerce')
+                df_tr_f['f_fin'] = pd.to_datetime(df_tr_f['Fecha_Finalizacion'], errors='coerce')
+
+                # Calcular días de demora
+                df_tr_f['Días Impresión'] = (df_tr_f['f_imp'] - df_tr_f['f_sol']).dt.days
+                df_tr_f['Días Entrega Final'] = (df_tr_f['f_fin'] - df_tr_f['f_sol']).dt.days
+
+                df_tiempos = df_tr_f.dropna(subset=['f_sol']).sort_values('f_sol')
+
+                if not df_tiempos.empty and (df_tiempos['Días Impresión'].notna().any() or df_tiempos['Días Entrega Final'].notna().any()):
+                    fig_time = px.line(
+                        df_tiempos, x='Fecha_Solicitud', 
+                        y=['Días Impresión', 'Días Entrega Final'],
+                        markers=True, template="plotly_dark",
+                        labels={'value': 'Días Transcurridos', 'variable': 'Hito Logístico'},
+                        color_discrete_map={'Días Impresión': '#3b82f6', 'Días Entrega Final': '#10b981'}
+                    )
+                    fig_time.update_layout(height=320, margin=dict(l=20, r=20, t=20, b=20), xaxis_title="Fecha Solicitud", yaxis_title="Días de Demora")
+                    st.plotly_chart(fig_time, use_container_width=True)
+                else:
+                    st.info("Aún no hay solicitudes finalizadas/impresas para calcular tiempos de respuesta.")
+            else:
+                st.info("El Tracker de Ejecución Logística no contiene registros.")
+
+        # --- FILA 3: ESTADO DE CUMPLIMIENTO / BACKLOG PENDIENTE ---
+        st.markdown("---")
+        st.markdown("##### 📌 Resumen de Carga y Ejecución Pendiente en Logística")
+        
+        if not df_tr_filtrado.empty:
+            df_backlog = pd.DataFrame([
+                {"Tarea Logística": "Pendiente Carga en SAP", "Cantidad": pend_sap},
+                {"Tarea Logística": "Pendiente Entrega Físicamente", "Cantidad": pend_fisico}
+            ])
+            
+            fig_backlog = px.bar(
+                df_backlog, x='Cantidad', y='Tarea Logística', orientation='h',
+                text='Cantidad', template="plotly_dark",
+                color='Tarea Logística',
+                color_discrete_map={
+                    "Pendiente Carga en SAP": "#f59e0b",
+                    "Pendiente Entrega Físicamente": "#ef4444"
+                }
+            )
+            fig_backlog.update_layout(height=220, margin=dict(l=20, r=20, t=20, b=20), showlegend=False)
+            st.plotly_chart(fig_backlog, use_container_width=True)
+        else:
+            st.info("No hay backlog pendiente acumulado.")
 # ==========================================
 # VISTA: TRACKER DE EJECUCIÓN LOGÍSTICA
 # ==========================================
