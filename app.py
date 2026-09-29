@@ -191,6 +191,7 @@ ALMACENES_PUESTOS = {
 LISTA_ALMACENES = list(ALMACENES_PUESTOS.keys())
 OPCIONES_SOPORTE_TARJETA = ["SIN MEDIO DEFINIDO", "PALLET CHICO", "PALLET GRANDE", "CANASTO", "CAPACHO CHICO", "CAPACHO GRANDE", "RACK"]
 OPCIONES_GAVETA = ["S", "M", "L", "XL"]
+OPCIONES_UNIDAD_MEDIDA = ["UN", "M", "KG", "L"]
 
 if 'usuario_email' not in st.session_state:
     st.session_state['usuario_email'] = None
@@ -334,14 +335,47 @@ def cargar_packaging():
     if os.path.exists(PKG_FILE):
         try:
             df = pd.read_excel(PKG_FILE)
-            df['Material'] = df['Material'].astype(str).str.strip().str.upper()
+            df.columns = [str(c).strip() for c in df.columns]
+            
+            # Identificar columna del código de material
+            col_mat = next((c for c in df.columns if c.upper() in ['MATERIAL', 'CODIGO', 'CÓDIGO', 'MATERIALES']), df.columns[0])
+            df[col_mat] = df[col_mat].astype(str).str.strip().str.upper()
             
             dict_pkg = {}
             for _, r in df.iterrows():
-                mat = r['Material']
-                medio_val = str(r.get('Packaging', r.get('Packaing', r.get('Medio', '')))).strip()
-                unid_val = str(r.get('Unidad', r.get('UM', r.get('Unidad Reposicion', 'UN')))).strip().upper()
-                dict_pkg[mat] = {"medio": medio_val, "unidad": unid_val if unid_val != 'NAN' else 'UN'}
+                mat = r[col_mat]
+                
+                # Obtención de Medio / Packaging
+                medio_val = ""
+                for c_med in ['Packaging', 'Packaing', 'Medio', 'Soporte', 'Envase']:
+                    if c_med in df.columns and pd.notna(r[c_med]):
+                        medio_val = str(r[c_med]).strip()
+                        break
+
+                # Obtención de Unidad
+                unid_val = "UN"
+                for c_uni in ['Unidad', 'UM', 'Unidad Reposicion', 'Unidad de Medida']:
+                    if c_uni in df.columns and pd.notna(r[c_uni]):
+                        unid_val = str(r[c_uni]).strip().upper()
+                        break
+
+                # Obtención de Lote / Cantidad de Packaging
+                cant_val = None
+                for c_cant in ['Lote Packaging', 'Lote packaging', 'Lote Packaging ', 'Lote', 'Cantidad', 'Cantidad Reposicion', 'Cant', 'Lote de Reposicion', 'Tamaño Lote']:
+                    if c_cant in df.columns and pd.notna(r[c_cant]):
+                        try:
+                            val_num = float(r[c_cant])
+                            if not pd.isna(val_num):
+                                cant_val = val_num
+                                break
+                        except (ValueError, TypeError):
+                            pass
+
+                dict_pkg[mat] = {
+                    "medio": medio_val, 
+                    "unidad": unid_val if unid_val not in ['NAN', 'NONE', ''] else 'UN',
+                    "cantidad": cant_val
+                }
             return dict_pkg
         except Exception:
             return {}
@@ -816,7 +850,7 @@ if tab_tracker:
                             col_b1, col_b2 = st.columns(2)
                             with col_b1:
                                 if estado_actual != "En Proceso" and estado_actual != "Entregado":
-                                    if st.button("▶️ En Proceso", key=f"btn_proc_{sol_id}"):
+                                    if st.button("▶️️ En Proceso", key=f"btn_proc_{sol_id}"):
                                         df_tr.loc[df_tr['ID_Solicitud'] == sol_id, 'Estado_Fisico'] = 'En Proceso'
                                         guardar_tracker(df_tr)
                                         st.rerun()
@@ -863,11 +897,20 @@ if tab_crear:
             
             # Búsqueda automática en Lote Packaging
             info_pkg = dict_pkg.get(material_input, {})
-            um_sugerida = info_pkg.get('unidad', 'ST')
+            um_sugerida = info_pkg.get('unidad', 'UN')
             medio_pkg_sugerido = info_pkg.get('medio', '')
+            cant_pkg_sugerida = info_pkg.get('cantidad', None)
             
-            if material_input and info_pkg:
-                st.caption(f"ℹ️ Material encontrado en packaging: **UM Base:** {um_sugerida}")
+            # Mensaje informativo si existe lote en Packaging
+            if material_input:
+                if info_pkg:
+                    if cant_pkg_sugerida is not None:
+                        cant_fmt = int(cant_pkg_sugerida) if cant_pkg_sugerida == int(cant_pkg_sugerida) else cant_pkg_sugerida
+                        st.info(f"📦 El código **{material_input}** tiene **{cant_fmt}** de Lote de Packaging.")
+                    else:
+                        st.caption(f"ℹ️ Material encontrado en packaging sin lote definido: **UM Base:** {um_sugerida}")
+                else:
+                    st.caption("ℹ️ El código de material no se encuentra en el archivo de Packaging. Se usarán valores por defecto.")
 
             centro = st.text_input("Centro:", value="A110", disabled=True, help="El centro de producción es fijo: A110")
             alm_origen = st.selectbox("Almacén Origen:", LISTA_ALMACENES, index=0, key="c_alm_orig")
@@ -886,26 +929,45 @@ if tab_crear:
                 idx_default = 0
                 if medio_pkg_sugerido in lista_medios:
                     idx_default = lista_medios.index(medio_pkg_sugerido)
-                medio = st.selectbox("Medio / Tamaño Gaveta:", lista_medios, index=idx_default, key="c_medio_gav")
+                medio = st.selectbox("Medio / Tamaño Gaveta:", lista_medios, index=idx_default, key=f"c_medio_gav_{material_input}")
             else:
                 lista_medios = OPCIONES_SOPORTE_TARJETA
                 idx_default = 0
                 if medio_pkg_sugerido in lista_medios:
                     idx_default = lista_medios.index(medio_pkg_sugerido)
-                medio = st.selectbox("Medio / Soporte Tarjeta:", lista_medios, index=idx_default, key="c_medio_tarj")
+                medio = st.selectbox("Medio / Soporte Tarjeta:", lista_medios, index=idx_default, key=f"c_medio_tarj_{material_input}")
                 
         st.markdown("---")
         col_cant1, col_cant2, col_cant3 = st.columns(3)
         
+        # Determinar Lote y Unidad precargada
+        val_cant_repo_init = float(cant_pkg_sugerida) if cant_pkg_sugerida is not None else 10.0
+        
+        idx_um_default = 0
+        if um_sugerida in OPCIONES_UNIDAD_MEDIDA:
+            idx_um_default = OPCIONES_UNIDAD_MEDIDA.index(um_sugerida)
+
         with col_cant1:
-            cant_repo = st.number_input("Cantidad Reposición:", min_value=1.0, step=1.0, value=10.0, key="c_cant_repo")
+            cant_repo = st.number_input(
+                "Cantidad Reposición:", 
+                min_value=1.0, 
+                step=1.0, 
+                value=val_cant_repo_init, 
+                key=f"c_cant_repo_{material_input}"
+            )
         with col_cant2:
-            unid_repo = st.text_input("Unidad Reposición:", value=um_sugerida, key="c_unid_repo").strip().upper()
+            unid_repo = st.selectbox(
+                "Unidad Reposición:", 
+                OPCIONES_UNIDAD_MEDIDA, 
+                index=idx_um_default, 
+                key=f"c_unid_repo_{material_input}"
+            )
         with col_cant3:
             if tipo_kanban == "GAVETA":
-                cant_pp = st.number_input("Cantidad Punto de Pedido:", value=cant_repo, disabled=True, help="En GAVETA, la Cantidad Punto de Pedido es idéntica a la Cantidad Reposición.", key="c_cant_pp_gav")
+                cant_pp = st.number_input("Cantidad Punto de Pedido:", value=cant_repo, disabled=True, help="En GAVETA, la Cantidad Punto de Pedido es idéntica a la Cantidad Reposición.", key=f"c_cant_pp_gav_{material_input}")
             else:
-                cant_pp = st.number_input("Cantidad Punto de Pedido:", min_value=1.0, step=1.0, value=min(cant_repo - 1.0, 5.0) if cant_repo > 1 else 1.0, key="c_cant_pp_tarj")
+                val_pp_default = min(cant_repo - 1.0, 5.0) if cant_repo > 1 else 1.0
+                cant_pp = st.number_input("Cantidad Punto de Pedido:", min_value=1.0, step=1.0, value=val_pp_default, key=f"c_cant_pp_tarj_{material_input}")
 
         tiempo_abast = st.number_input("Tiempo preparación abast. (en días):", min_value=0, value=1, key="c_tiempo_abast")
         
@@ -950,7 +1012,7 @@ if tab_crear:
 # ==========================================
 # VISTA: MODIFICAR Y ELIMINAR (PROCESOS)
 # ==========================================
-tab_mod = obtener_tab("✏️ Modificar y Eliminar")
+tab_mod = obtener_tab("✏️️ Modificar y Eliminar")
 if tab_mod:
     with tab_mod:
         st.subheader("✏ Modificación y Eliminación de Kanbans")
@@ -1013,7 +1075,9 @@ if tab_mod:
                     with col_m_c1:
                         m_cant_repo = st.number_input("Cantidad Reposición:", value=float(fila_k['Cantidad Reposicion']) if pd.notna(fila_k['Cantidad Reposicion']) else 10.0, key="m_cant_repo")
                     with col_m_c2:
-                        m_unid_repo = st.text_input("Unidad Reposición:", value=str(fila_k['Unidad Reposicion']), key="m_unid_repo").strip().upper()
+                        val_um_actual = str(fila_k['Unidad Reposicion']).upper()
+                        idx_um_mod = OPCIONES_UNIDAD_MEDIDA.index(val_um_actual) if val_um_actual in OPCIONES_UNIDAD_MEDIDA else 0
+                        m_unid_repo = st.selectbox("Unidad Reposición:", OPCIONES_UNIDAD_MEDIDA, index=idx_um_mod, key="m_unid_repo")
                     with col_m_c3:
                         if m_tipo_kanban == "GAVETA":
                             m_cant_pp = st.number_input("Cantidad Punto Pedido:", value=m_cant_repo, disabled=True, key="m_cant_pp_gav")
