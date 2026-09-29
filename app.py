@@ -109,10 +109,13 @@ ROLES_PREDEFINIDOS = {
     "produccion@crucianelli.com": "Procesos", "abacelli@crucianelli.com": "Procesos",
     "tabrate@crucianelli.com": "Procesos", "llatanzi@crucianelli.com": "Procesos",
     
+    # USUARIOS DE LOGÍSTICA
     "mlopez@crucianelli.com": "Logistica", "recepcion3@crucianelli.com": "Logistica",
     "gpereyra@crucianelli.com": "Logistica", "jporta@crucianelli.com": "Logistica",
-    "spetetta@crucianelli.com": "Logistica",
+    "spetetta@crucianelli.com": "Logistica", "gfiianchini@crucianelli.com": "Logistica",
+    "ileon@crucianelli.com": "Logistica",
     
+    # USUARIOS DE CONSULTA
     "fany@crucianelli.com": "Consulta", "strillini@crucianelli.com": "Consulta",
     "apicotto@crucianelli.com": "Consulta", "fsolis@crucianelli.com": "Consulta",
     "isola@crucianelli.com": "Consulta", "bfrutos@crucianelli.com": "Consulta",
@@ -283,8 +286,8 @@ def cargar_base_desde_disco():
             return pd.DataFrame(columns=COLUMNS)
     return pd.DataFrame(columns=COLUMNS)
 
-def obtener_base_kanbans():
-    if 'df_kanbans_global' not in st.session_state:
+def obtener_base_kanbans(forzar=False):
+    if 'df_kanbans_global' not in st.session_state or forzar:
         st.session_state['df_kanbans_global'] = cargar_base_desde_disco()
     return st.session_state['df_kanbans_global']
 
@@ -409,7 +412,7 @@ dict_pkg = cargar_packaging()
 rol_actual = st.session_state.get('usuario_rol', 'Consulta')
 
 # ==========================================
-# CABECERA Y ROL
+# CABECERA Y BOTONES DE CONTROL GLOBAL
 # ==========================================
 st.markdown(f"""
 <div class="header-box">
@@ -426,7 +429,14 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-col_head_space, col_logout = st.columns([5, 1])
+_, col_ref, col_logout = st.columns([4, 1.2, 1])
+
+with col_ref:
+    if st.button("🔄 Actualizar Datos", use_container_width=True, help="Refresca los datos en tiempo real sin cerrar sesión"):
+        obtener_base_kanbans(forzar=True)
+        st.success("⚡ ¡Datos sincronizados!")
+        st.rerun()
+
 with col_logout:
     if st.button("Cerrar Sesión", use_container_width=True):
         st.session_state['usuario_email'] = None
@@ -434,6 +444,7 @@ with col_logout:
         st.session_state.pop('df_kanbans_global', None)
         st.rerun()
 
+df_kanbans = obtener_base_kanbans()
 total_k = len(df_kanbans)
 internos_k = len(df_kanbans[df_kanbans['Tipo Etiqueta'] == 'KI'])
 externos_k = len(df_kanbans[df_kanbans['Tipo Etiqueta'] == 'KE'])
@@ -455,7 +466,7 @@ if rol_actual == "Procesos":
 elif rol_actual == "Logistica":
     lista_tabs = ["🚚 Tracker de Ejecución Logística", "📈 Panel KPIs & Métricas", "📋 Consulta General", "📊 Exportar Datos para SAP", "📜 Historial Auditoría", "👤 Mi Perfil"]
 else:
-    lista_tabs = ["📈 Panel KPIs & Métricas", "📋 Consulta General", "🚚 Estado de Solicitudes", "👤 Mi Perfil"]
+    lista_tabs = ["📈 Panel KPIs & Métricas", "📋 Consulta General", "🚚 Estado de Solicitudes", "📊 Exportar Datos para SAP", "👤 Mi Perfil"]
 
 tabs = st.tabs(lista_tabs)
 
@@ -631,15 +642,10 @@ if tab_crear:
         if st.button("💾 Guardar y Crear Kanban", type="primary"):
             df_curr = obtener_base_kanbans()
             
-            # --- VALIDACIÓN 1: CAMPOS OBLIGATORIOS ---
             if not material or puesto_destino in ["-- Seleccionar --", ""]:
                 st.error("❌ Error: Código de Material y Puesto Destino son campos obligatorios.")
-            
-            # --- VALIDACIÓN 2: LÓGICA LOGÍSTICA PUNTO DE PEDIDO < REPOSICIÓN ---
             elif tipo_soporte == "TARJETA" and float(cant_pp) >= float(cant_repo):
                 st.error(f"🚫 ACCIÓN BLOQUEADA: En Kanbans tipo TARJETA, el Punto de Pedido ({cant_pp}) DEBE SER ESTRICTAMENTE MENOR a la Cantidad de Reposición ({cant_repo}).")
-            
-            # --- VALIDACIÓN 3: REGLA DE UNICIDAD (MATERIAL + PUESTO DESTINO) ---
             elif not df_curr.empty and len(
                 df_curr[
                     (df_curr['Material'].astype(str).str.strip().str.upper() == material) & 
@@ -652,8 +658,6 @@ if tab_crear:
                 ].iloc[0]['N° Etiquetas']
                 
                 st.error(f"🚫 REGISTRO DUPLICADO PROHIBIDO: Ya existe un Kanban activo (**{kb_existente}**) para el Material **{material}** en el Puesto **{puesto_destino}**.")
-            
-            # --- GUARDA Y REUTILIZA CÓDIGO K LIBRE ---
             else:
                 fecha_actual = obtener_fecha_hora_arg()
                 usr_act = st.session_state['usuario_email']
@@ -688,7 +692,7 @@ if tab_crear:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ==========================================
-# VISTA: MODIFICAR Y ELIMINAR (CON AUTO-LLENADO & ALERTAS)
+# VISTA: MODIFICAR Y ELIMINAR (AUTO-LLENADO & ALERTAS)
 # ==========================================
 tab_mod = obtener_tab("✏️ Modificar y Eliminar")
 if tab_mod:
@@ -696,7 +700,6 @@ if tab_mod:
         st.subheader("✏️ Modificar y Eliminar Kanban")
         df_live = obtener_base_kanbans()
         
-        # Alerta de modificación exitosa previa si se seteó
         if 'msg_exito_mod' in st.session_state:
             st.success(st.session_state.pop('msg_exito_mod'))
         if 'msg_exito_del' in st.session_state:
@@ -723,17 +726,13 @@ if tab_mod:
                     sel_k_fmt = st.selectbox("Seleccione el Código K a modificar:", opciones_k, key="m_select_k_combo")
                     k_sel = sel_k_fmt.split(" | ")[0].strip()
                     
-                    # Fila actual de datos guardados para el K seleccionado
                     row = kanbans_encontrados[kanbans_encontrados['N° Etiquetas'] == k_sel].iloc[0]
                     
                     st.caption(f"📌 Editando **{k_sel}** — Material: **{row['Material']}**")
                     
-                    # PARSEO Y PRE-CARGA DINÁMICA DE VALORES GUARDADOS
                     val_centro = str(row['Centro']) if pd.notna(row['Centro']) else "A110"
-                    
                     tipo_k_curr = str(row['Tipo Kanban']).upper() if pd.notna(row['Tipo Kanban']) else "TARJETA"
                     idx_tipo_k = 0 if "GAVETA" in tipo_k_curr else 1
-                    
                     medio_curr = str(row['Medio']) if pd.notna(row['Medio']) else "SIN MEDIO DEFINIDO"
                     
                     alm_o_curr = str(row['Almacén Origen']) if pd.notna(row['Almacén Origen']) and str(row['Almacén Origen']) in LISTA_ALMACENES else "L010"
@@ -753,7 +752,6 @@ if tab_mod:
                     try: val_dias = int(row['Tiempo preparación abast. (en días)'])
                     except (ValueError, TypeError): val_dias = 1
 
-                    # CAMPOS AUTO-LLENADOS CON CLAVE DINÁMICA BASADA EN EL CÓDIGO K SELECCIONADO
                     m_col1, m_col2, m_col3 = st.columns(3)
                     with m_col1:
                         m_centro = st.text_input("Centro", value=val_centro, key=f"m_c_{k_sel}")
@@ -783,7 +781,6 @@ if tab_mod:
                         m_unidad = st.selectbox("Unidad Base", unidades_validas, index=idx_un, key=f"m_un_{k_sel}")
                         m_dias_prep = st.number_input("Tiempo Preparación / Días", min_value=0, value=val_dias, key=f"m_dias_{k_sel}")
 
-                    # GUARDA CAMBIOS CON AVISOS DE CONFIRMACIÓN O ERROR
                     if st.button("💾 Guardar Cambios de Kanban", type="primary", key=f"btn_save_{k_sel}"):
                         if not m_puesto_destino:
                             st.error("❌ Error: El Puesto Destino no puede estar vacío.")
@@ -851,16 +848,16 @@ tab_consulta = obtener_tab("📋 Consulta General")
 if tab_consulta:
     with tab_consulta:
         st.subheader("📋 Consulta General de Kanbans (En Vivo)")
-        st.dataframe(obtener_base_kanbans(), use_container_width=True)
+        st.dataframe(obtener_base_kanbans(forzar=True), use_container_width=True)
 
 tab_export = obtener_tab("📊 Exportar Datos") or obtener_tab("📊 Exportar Datos para SAP")
 if tab_export:
     with tab_export:
         st.subheader("📊 Exportar Tabla Z Completa para SAP")
         
-        df_export_live = obtener_base_kanbans()
+        df_export_live = obtener_base_kanbans(forzar=True)
         
-        st.caption(f"⚡ Esta vista contiene {len(df_export_live)} registros actualizados en vivo por la planta.")
+        st.caption(f"⚡ Esta vista contiene {len(df_export_live)} registros actualizados en tiempo real para todos los roles.")
         st.dataframe(df_export_live, use_container_width=True)
         
         output = io.BytesIO()
