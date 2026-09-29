@@ -190,7 +190,7 @@ ALMACENES_PUESTOS = {
 
 LISTA_ALMACENES = list(ALMACENES_PUESTOS.keys())
 OPCIONES_SOPORTE_TARJETA = ["SIN MEDIO DEFINIDO", "PALLET CHICO", "PALLET GRANDE", "CANASTO", "CAPACHO CHICO", "CAPACHO GRANDE", "RACK"]
-OPCIONES_GAVETA = ["S", "M", "L", "XL"]
+OPCIONES_GAVETA = ["GAVETA S", "GAVETA M", "GAVETA L", "GAVETA XL", "S", "M", "L", "XL"]
 
 if 'usuario_email' not in st.session_state:
     st.session_state['usuario_email'] = None
@@ -335,7 +335,14 @@ def cargar_packaging():
         try:
             df = pd.read_excel(PKG_FILE)
             df['Material'] = df['Material'].astype(str).str.strip().str.upper()
-            return df.set_index('Material')['Packaing'].to_dict()
+            
+            dict_pkg = {}
+            for _, r in df.iterrows():
+                mat = r['Material']
+                medio_val = str(r.get('Packaging', r.get('Packaing', r.get('Medio', '')))).strip()
+                unid_val = str(r.get('Unidad', r.get('UM', r.get('Unidad Reposicion', 'ST')))).strip().upper()
+                dict_pkg[mat] = {"medio": medio_val, "unidad": unid_val if unid_val != 'NAN' else 'ST'}
+            return dict_pkg
         except Exception:
             return {}
     return {}
@@ -568,7 +575,6 @@ if tab_kpis:
         if not df_tr_filtrado.empty and f_puesto != "Todos" and 'Puesto_Destino' in df_tr_filtrado.columns:
             df_tr_filtrado = df_tr_filtrado[df_tr_filtrado['Puesto_Destino'] == f_puesto]
 
-        # CÁLCULOS PENDIENTES DEL TRACKER
         if not df_tr_filtrado.empty:
             pend_sap = len(df_tr_filtrado[df_tr_filtrado['Cargado_SAP'] != 'SI'])
             pend_fisico = len(df_tr_filtrado[df_tr_filtrado['Estado_Fisico'] != 'Entregado'])
@@ -576,7 +582,6 @@ if tab_kpis:
             pend_sap = 0
             pend_fisico = 0
 
-        # --- MÉTRICAS SUPERIORES (TARJETAS) ---
         c_creados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'CREACIÓN']) if not df_logs_filtrado.empty else 0
         c_actualizados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'MODIFICACIÓN']) if not df_logs_filtrado.empty else 0
         c_eliminados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'ELIMINACIÓN']) if not df_logs_filtrado.empty else 0
@@ -584,13 +589,12 @@ if tab_kpis:
         m1, m2, m3, m4, m5, m6 = st.columns(6)
         m1.metric("KB Activos", len(df_k_filtrado))
         m2.metric("✨ Creados", c_creados)
-        m3.metric("✏️ Modificados", c_actualizados)
+        m3.metric("✏️️ Modificados", c_actualizados)
         m4.metric("🗑️ Eliminados", c_eliminados)
         m5.metric("⏳ Pendiente SAP", pend_sap, delta=f"{pend_sap} pendientes", delta_color="inverse")
         m6.metric("🚚 Pend. Físico", pend_fisico, delta=f"{pend_fisico} pendientes", delta_color="inverse")
         st.markdown("---")
 
-        # --- FILA 1 DE GRÁFICOS ---
         g_col1, g_col2 = st.columns(2)
         
         with g_col1:
@@ -633,7 +637,6 @@ if tab_kpis:
 
         st.markdown("---")
 
-        # --- FILA 2 DE GRÁFICOS ---
         g_col3, g_col4 = st.columns(2)
 
         with g_col3:
@@ -655,7 +658,7 @@ if tab_kpis:
                 st.info("Sin registros de movimientos en el rango seleccionado.")
 
         with g_col4:
-            st.markdown("##### ⏱️️ Tendencia de Finalización de Tareas (Lead Time)")
+            st.markdown("##### ⏱ Tendencia de Finalización de Tareas (Lead Time)")
             if not df_tr_filtrado.empty:
                 df_tr_f = df_tr_filtrado.copy()
 
@@ -696,14 +699,13 @@ if tab_kpis:
                 st.info("El Tracker de Ejecución Logística no contiene registros.")
 
 # ==========================================
-# VISTA: TRACKER DE EJECUCIÓN LOGÍSTICA (PERMISOS RESTRINGIDOS)
+# VISTA: TRACKER DE EJECUCIÓN LOGÍSTICA (PERMISOS RESTRINGIDOS A LOGISTICA)
 # ==========================================
 tab_tracker = obtener_tab("🚚 Tracker de Ejecución Logística") or obtener_tab("🚚 Estado de Solicitudes")
 if tab_tracker:
     with tab_tracker:
         st.subheader("🚚 Tracker de Ejecución Logística")
         
-        # PERMISO OPERATIVO EXCLUSIVO DE LOGÍSTICA
         es_logistica = (rol_actual == "Logistica")
         
         if es_logistica:
@@ -744,7 +746,6 @@ if tab_tracker:
             st.write(f"Mostrando **{len(df_filtrado_tr)}** de **{len(df_tr)}** solicitudes.")
             st.markdown("---")
 
-            # LISTADO DE TARJETAS Y ACCIONES
             for idx, row in df_filtrado_tr.iterrows():
                 sol_id = row['ID_Solicitud']
                 
@@ -759,7 +760,6 @@ if tab_tracker:
 
                     c_sap, c_imp, c_estado, c_obs = st.columns([1.5, 1.5, 2, 2.5])
 
-                    # 1. ESTADO Y BOTÓN CARGA EN SAP
                     with c_sap:
                         st.markdown("**1. Carga SAP**")
                         cargado_sap = row['Cargado_SAP'] == 'SI'
@@ -774,7 +774,6 @@ if tab_tracker:
                                     st.success("Carga en SAP registrada.")
                                     st.rerun()
 
-                    # 2. ESTADO Y BOTÓN IMPRESIÓN
                     with c_imp:
                         st.markdown("**2. Impresión**")
                         impreso = row['Impreso'] == 'SI'
@@ -793,7 +792,6 @@ if tab_tracker:
                                     st.success("Impresión registrada.")
                                     st.rerun()
 
-                    # 3. ESTADO Y BOTONES DE FLUJO FÍSICO
                     with c_estado:
                         st.markdown("**3. Estado Físico**")
                         estado_actual = row['Estado_Fisico']
@@ -817,7 +815,6 @@ if tab_tracker:
                                         st.success("Solicitud Finalizada.")
                                         st.rerun()
 
-                    # 4. OBSERVACIONES Y GUARDADO INDIVIDUAL
                     with c_obs:
                         st.markdown("**4. Observaciones**")
                         obs_val = "" if row['Observación'] == "-" else row['Observación']
@@ -836,84 +833,104 @@ if tab_tracker:
                     st.markdown("---")
 
 # ==========================================
-# VISTA: CREAR NUEVO KANBAN (PROCESOS)
+# VISTA: CREAR NUEVO KANBAN (PROCESOS) - REGLAS Y PARAMETRIZACIONES COMPLETAS
 # ==========================================
 tab_crear = obtener_tab("➕ Crear Nuevo Kanban")
 if tab_crear:
     with tab_crear:
         st.subheader("➕ Alta de Nuevo Kanban")
         
-        with st.form("form_nuevo_kanban"):
-            col1, col2 = st.columns(2)
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            tipo_etiqueta = st.selectbox("Tipo de Etiqueta:", ["KI", "KE"], key="c_tipo_etiq")
+            material_input = st.text_input("Material (Código SAP):", key="c_mat_input").strip().upper()
             
-            with col1:
-                tipo_etiqueta = st.selectbox("Tipo de Etiqueta:", ["KI", "KE"])
-                material = st.text_input("Material (Código SAP):").strip().upper()
-                centro = st.text_input("Centro:", value="1000").strip().upper()
-                alm_origen = st.selectbox("Almacén Origen:", LISTA_ALMACENES, index=0)
-                puesto_origen = st.text_input("Puesto trabajo Origen:").strip().upper()
-                
-            with col2:
-                alm_destino = st.selectbox("Almacén Destino:", LISTA_ALMACENES, index=1)
-                puestos_posibles = ALMACENES_PUESTOS.get(alm_destino, [])
-                puesto_destino = st.selectbox("Puesto de trabajo Destino:", puestos_posibles) if puestos_posibles else st.text_input("Puesto de trabajo Destino:").strip().upper()
-                
-                tipo_kanban = st.radio("Tipo de Kanban:", ["TARJETA", "GAVETA"], horizontal=True)
-                
-                if tipo_kanban == "TARJETA":
-                    medio = st.selectbox("Medio / Soporte:", OPCIONES_SOPORTE_TARJETA)
-                else:
-                    medio = st.selectbox("Tamaño de Gaveta:", OPCIONES_GAVETA)
-                    
-            st.markdown("---")
-            col_cant1, col_cant2, col_cant3 = st.columns(3)
+            # Búsqueda automática en Lote Packaging
+            info_pkg = dict_pkg.get(material_input, {})
+            um_sugerida = info_pkg.get('unidad', 'ST')
+            medio_pkg_sugerido = info_pkg.get('medio', '')
             
-            with col_cant1:
-                cant_repo = st.number_input("Cantidad Reposición:", min_value=1.0, step=1.0, value=10.0)
-            with col_cant2:
-                unid_repo = st.text_input("Unidad Reposición:", value="ST").strip().upper()
-            with col_cant3:
-                cant_pp = st.number_input("Cantidad Punto Pedido:", min_value=1.0, step=1.0, value=10.0 if tipo_kanban == "GAVETA" else 5.0)
+            if material_input and info_pkg:
+                st.caption(f"ℹ️ Material encontrado en packaging: **UM Base:** {um_sugerida}")
 
-            tiempo_abast = st.number_input("Tiempo preparación abast. (en días):", min_value=0, value=1)
+            centro = st.text_input("Centro:", value="A110", disabled=True, help="El centro de producción es fijo: A110")
+            alm_origen = st.selectbox("Almacén Origen:", LISTA_ALMACENES, index=0, key="c_alm_orig")
+            puesto_origen = st.text_input("Puesto trabajo Origen:", key="c_puesto_orig").strip().upper()
             
-            submit_create = st.form_submit_button("✨ Crear Kanban", type="primary", use_container_width=True)
+        with col2:
+            alm_destino = st.selectbox("Almacén Destino:", LISTA_ALMACENES, index=1, key="c_alm_dest")
+            puestos_posibles = ALMACENES_PUESTOS.get(alm_destino, [])
+            puesto_destino = st.selectbox("Puesto de trabajo Destino:", puestos_posibles, key="c_puesto_dest") if puestos_posibles else st.text_input("Puesto de trabajo Destino:", key="c_puesto_dest_txt").strip().upper()
             
-            if submit_create:
-                if not material:
-                    st.error("❌ El código de Material es obligatorio.")
-                else:
-                    nuevo_k = obtener_siguiente_codigo_k(df_kanbans)
-                    now_str = obtener_fecha_hora_arg()
-                    user_actual = st.session_state['usuario_email']
-                    
-                    nueva_fila = pd.DataFrame([{
-                        'N° Etiquetas': nuevo_k,
-                        'Tipo Etiqueta': tipo_etiqueta,
-                        'Tipo Kanban': tipo_kanban,
-                        'Medio': medio,
-                        'Material': material,
-                        'Centro': centro,
-                        'Almacén Origen': alm_origen,
-                        'Almacen Destino': alm_destino,
-                        'Puesto trabajo Origen': puesto_origen,
-                        'Puesto de trabajo destino': puesto_destino,
-                        'Cantidad Reposicion': str(cant_repo),
-                        'Unidad Reposicion': unid_repo,
-                        'Cantidad Punto de Pedido': str(cant_pp),
-                        'Tiempo preparación abast. (en días)': str(tiempo_abast),
-                        'Fecha Modificación': now_str,
-                        'Usuario Modificación': user_actual
-                    }])
-                    
-                    df_actualizado = pd.concat([df_kanbans, nueva_fila], ignore_index=True)
-                    actualizar_base_kanbans(df_actualizado)
-                    
-                    registrar_log("CREACIÓN", nuevo_k, material, medio, alm_destino, puesto_destino, f"Creación inicial del Kanban {nuevo_k}", user_actual)
-                    crear_solicitud_tracker(material, nuevo_k, tipo_kanban, puesto_destino, medio, "Alta de Kanban", "Creación e Impresión", user_actual)
-                    
-                    st.success(f"✅ ¡Kanban {nuevo_k} creado exitosamente y registrado en la cola del Tracker!")
-                    st.rerun()
+            tipo_kanban = st.radio("Tipo de Kanban:", ["GAVETA", "TARJETA"], horizontal=True, key="c_tipo_kb")
+            
+            # Selección dinámica de Medio según tipo de Kanban
+            if tipo_kanban == "GAVETA":
+                lista_medios = OPCIONES_GAVETA
+                idx_default = 0
+                if medio_pkg_sugerido in lista_medios:
+                    idx_default = lista_medios.index(medio_pkg_sugerido)
+                medio = st.selectbox("Medio / Tamaño Gaveta:", lista_medios, index=idx_default, key="c_medio_gav")
+            else:
+                lista_medios = OPCIONES_SOPORTE_TARJETA
+                idx_default = 0
+                if medio_pkg_sugerido in lista_medios:
+                    idx_default = lista_medios.index(medio_pkg_sugerido)
+                medio = st.selectbox("Medio / Soporte Tarjeta:", lista_medios, index=idx_default, key="c_medio_tarj")
+                
+        st.markdown("---")
+        col_cant1, col_cant2, col_cant3 = st.columns(3)
+        
+        with col_cant1:
+            cant_repo = st.number_input("Cantidad Reposición:", min_value=1.0, step=1.0, value=10.0, key="c_cant_repo")
+        with col_cant2:
+            unid_repo = st.text_input("Unidad Reposición:", value=um_sugerida, key="c_unid_repo").strip().upper()
+        with col_cant3:
+            if tipo_kanban == "GAVETA":
+                cant_pp = st.number_input("Cantidad Punto de Pedido:", value=cant_repo, disabled=True, help="En GAVETA, la Cantidad Punto de Pedido es idéntica a la Cantidad Reposición.", key="c_cant_pp_gav")
+            else:
+                cant_pp = st.number_input("Cantidad Punto de Pedido:", min_value=1.0, step=1.0, value=min(cant_repo - 1.0, 5.0) if cant_repo > 1 else 1.0, key="c_cant_pp_tarj")
+
+        tiempo_abast = st.number_input("Tiempo preparación abast. (en días):", min_value=0, value=1, key="c_tiempo_abast")
+        
+        if st.button("✨ Crear Kanban", type="primary", use_container_width=True, key="c_btn_submit"):
+            if not material_input:
+                st.error("❌ El código de Material es obligatorio.")
+            elif tipo_kanban == "TARJETA" and cant_pp >= cant_repo:
+                st.error(f"❌ Para tipo TARJETA, la Cantidad Punto de Pedido ({cant_pp}) debe ser ESTRICTAMENTE MENOR a la Cantidad Reposición ({cant_repo}).")
+            else:
+                nuevo_k = obtener_siguiente_codigo_k(df_kanbans)
+                now_str = obtener_fecha_hora_arg()
+                user_actual = st.session_state['usuario_email']
+                
+                nueva_fila = pd.DataFrame([{
+                    'N° Etiquetas': nuevo_k,
+                    'Tipo Etiqueta': tipo_etiqueta,
+                    'Tipo Kanban': tipo_kanban,
+                    'Medio': medio,
+                    'Material': material_input,
+                    'Centro': "A110",
+                    'Almacén Origen': alm_origen,
+                    'Almacen Destino': alm_destino,
+                    'Puesto trabajo Origen': puesto_origen,
+                    'Puesto de trabajo destino': puesto_destino,
+                    'Cantidad Reposicion': str(cant_repo),
+                    'Unidad Reposicion': unid_repo,
+                    'Cantidad Punto de Pedido': str(cant_pp),
+                    'Tiempo preparación abast. (en días)': str(tiempo_abast),
+                    'Fecha Modificación': now_str,
+                    'Usuario Modificación': user_actual
+                }])
+                
+                df_actualizado = pd.concat([df_kanbans, nueva_fila], ignore_index=True)
+                actualizar_base_kanbans(df_actualizado)
+                
+                registrar_log("CREACIÓN", nuevo_k, material_input, medio, alm_destino, puesto_destino, f"Creación inicial del Kanban {nuevo_k}", user_actual)
+                crear_solicitud_tracker(material_input, nuevo_k, tipo_kanban, puesto_destino, medio, "Alta de Kanban", "Creación e Impresión", user_actual)
+                
+                st.success(f"✅ ¡Kanban {nuevo_k} creado exitosamente y registrado en la cola del Tracker!")
+                st.rerun()
 
 # ==========================================
 # VISTA: MODIFICAR Y ELIMINAR (PROCESOS)
@@ -921,7 +938,7 @@ if tab_crear:
 tab_mod = obtener_tab("✏️ Modificar y Eliminar")
 if tab_mod:
     with tab_mod:
-        st.subheader("✏️ Modificación y Eliminación de Kanbans")
+        st.subheader("✏️️ Modificación y Eliminación de Kanbans")
         
         busqueda = st.text_input("🔍 Buscar por Código K o Material:", key="mod_search").strip().upper()
         
@@ -942,52 +959,59 @@ if tab_mod:
                 tab_m1, tab_m2 = st.tabs(["✏️ Modificar Datos", "🗑️ Eliminar Kanban"])
                 
                 with tab_m1:
-                    with st.form("form_modificar"):
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            m_tipo_etiqueta = st.selectbox("Tipo Etiqueta:", ["KI", "KE"], index=0 if fila_k['Tipo Etiqueta'] == "KI" else 1)
-                            m_material = st.text_input("Material:", value=str(fila_k['Material'])).strip().upper()
-                            m_centro = st.text_input("Centro:", value=str(fila_k['Centro'])).strip().upper()
-                            
-                            idx_origen = LISTA_ALMACENES.index(fila_k['Almacén Origen']) if fila_k['Almacén Origen'] in LISTA_ALMACENES else 0
-                            m_alm_origen = st.selectbox("Almacén Origen:", LISTA_ALMACENES, index=idx_origen)
-                            m_puesto_origen = st.text_input("Puesto trabajo Origen:", value=str(fila_k['Puesto trabajo Origen'])).strip().upper()
-                            
-                        with col2:
-                            idx_dest = LISTA_ALMACENES.index(fila_k['Almacen Destino']) if fila_k['Almacen Destino'] in LISTA_ALMACENES else 0
-                            m_alm_destino = st.selectbox("Almacén Destino:", LISTA_ALMACENES, index=idx_dest)
-                            
-                            puestos_pos = ALMACENES_PUESTOS.get(m_alm_destino, [])
-                            val_puesto_dest = str(fila_k['Puesto de trabajo destino'])
-                            idx_puesto = puestos_pos.index(val_puesto_dest) if val_puesto_dest in puestos_pos else 0
-                            
-                            m_puesto_destino = st.selectbox("Puesto de trabajo Destino:", puestos_pos, index=idx_puesto) if puestos_pos else st.text_input("Puesto de trabajo Destino:", value=val_puesto_dest).strip().upper()
-                            
-                            m_tipo_kanban = st.radio("Tipo de Kanban:", ["TARJETA", "GAVETA"], index=0 if fila_k['Tipo Kanban'] == "TARJETA" else 1, horizontal=True)
-                            
-                            medio_act = str(fila_k['Medio'])
-                            if m_tipo_kanban == "TARJETA":
-                                idx_med = OPCIONES_SOPORTE_TARJETA.index(medio_act) if medio_act in OPCIONES_SOPORTE_TARJETA else 0
-                                m_medio = st.selectbox("Medio / Soporte:", OPCIONES_SOPORTE_TARJETA, index=idx_med)
-                            else:
-                                idx_med = OPCIONES_GAVETA.index(medio_act) if medio_act in OPCIONES_GAVETA else 0
-                                m_medio = st.selectbox("Tamaño de Gaveta:", OPCIONES_GAVETA, index=idx_med)
-                                
-                        st.markdown("---")
-                        col_m_c1, col_m_c2, col_m_c3 = st.columns(3)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        m_tipo_etiqueta = st.selectbox("Tipo Etiqueta:", ["KI", "KE"], index=0 if fila_k['Tipo Etiqueta'] == "KI" else 1, key="m_tipo_etiq")
+                        m_material = st.text_input("Material:", value=str(fila_k['Material']), key="m_mat_in").strip().upper()
+                        m_centro = st.text_input("Centro:", value="A110", disabled=True)
                         
-                        with col_m_c1:
-                            m_cant_repo = st.number_input("Cantidad Reposición:", value=float(fila_k['Cantidad Reposicion']) if pd.notna(fila_k['Cantidad Reposicion']) else 10.0)
-                        with col_m_c2:
-                            m_unid_repo = st.text_input("Unidad Reposición:", value=str(fila_k['Unidad Reposicion'])).strip().upper()
-                        with col_m_c3:
-                            m_cant_pp = st.number_input("Cantidad Punto Pedido:", value=float(fila_k['Cantidad Punto de Pedido']) if pd.notna(fila_k['Cantidad Punto de Pedido']) else 10.0)
+                        idx_origen = LISTA_ALMACENES.index(fila_k['Almacén Origen']) if fila_k['Almacén Origen'] in LISTA_ALMACENES else 0
+                        m_alm_origen = st.selectbox("Almacén Origen:", LISTA_ALMACENES, index=idx_origen, key="m_alm_orig")
+                        m_puesto_origen = st.text_input("Puesto trabajo Origen:", value=str(fila_k['Puesto trabajo Origen']), key="m_puesto_orig").strip().upper()
+                        
+                    with col2:
+                        idx_dest = LISTA_ALMACENES.index(fila_k['Almacen Destino']) if fila_k['Almacen Destino'] in LISTA_ALMACENES else 0
+                        m_alm_destino = st.selectbox("Almacén Destino:", LISTA_ALMACENES, index=idx_dest, key="m_alm_dest")
+                        
+                        puestos_pos = ALMACENES_PUESTOS.get(m_alm_destino, [])
+                        val_puesto_dest = str(fila_k['Puesto de trabajo destino'])
+                        idx_puesto = puestos_pos.index(val_puesto_dest) if val_puesto_dest in puestos_pos else 0
+                        
+                        m_puesto_destino = st.selectbox("Puesto de trabajo Destino:", puestos_pos, index=idx_puesto, key="m_puesto_dest") if puestos_pos else st.text_input("Puesto de trabajo Destino:", value=val_puesto_dest, key="m_puesto_dest_txt").strip().upper()
+                        
+                        tipo_k_actual = "GAVETA" if fila_k['Tipo Kanban'] == "GAVETA" else "TARJETA"
+                        m_tipo_kanban = st.radio("Tipo de Kanban:", ["GAVETA", "TARJETA"], index=0 if tipo_k_actual == "GAVETA" else 1, horizontal=True, key="m_tipo_kb")
+                        
+                        medio_act = str(fila_k['Medio'])
+                        if m_tipo_kanban == "GAVETA":
+                            lista_m = OPCIONES_GAVETA
+                            idx_med = lista_m.index(medio_act) if medio_act in lista_m else 0
+                            m_medio = st.selectbox("Medio / Tamaño Gaveta:", lista_m, index=idx_med, key="m_medio_gav")
+                        else:
+                            lista_m = OPCIONES_SOPORTE_TARJETA
+                            idx_med = lista_m.index(medio_act) if medio_act in lista_m else 0
+                            m_medio = st.selectbox("Medio / Soporte Tarjeta:", lista_m, index=idx_med, key="m_medio_tarj")
+                            
+                    st.markdown("---")
+                    col_m_c1, col_m_c2, col_m_c3 = st.columns(3)
+                    
+                    with col_m_c1:
+                        m_cant_repo = st.number_input("Cantidad Reposición:", value=float(fila_k['Cantidad Reposicion']) if pd.notna(fila_k['Cantidad Reposicion']) else 10.0, key="m_cant_repo")
+                    with col_m_c2:
+                        m_unid_repo = st.text_input("Unidad Reposición:", value=str(fila_k['Unidad Reposicion']), key="m_unid_repo").strip().upper()
+                    with col_m_c3:
+                        if m_tipo_kanban == "GAVETA":
+                            m_cant_pp = st.number_input("Cantidad Punto Pedido:", value=m_cant_repo, disabled=True, key="m_cant_pp_gav")
+                        else:
+                            val_pp_init = float(fila_k['Cantidad Punto de Pedido']) if pd.notna(fila_k['Cantidad Punto de Pedido']) else 5.0
+                            m_cant_pp = st.number_input("Cantidad Punto Pedido:", value=val_pp_init, key="m_cant_pp_tarj")
 
-                        m_tiempo_abast = st.number_input("Tiempo preparación abast. (en días):", value=int(fila_k['Tiempo preparación abast. (en días)']) if pd.notna(fila_k['Tiempo preparación abast. (en días)']) else 1)
-                        
-                        btn_guardar_mod = st.form_submit_button("💾 Guardar Cambios", type="primary", use_container_width=True)
-                        
-                        if btn_guardar_mod:
+                    m_tiempo_abast = st.number_input("Tiempo preparación abast. (en días):", value=int(fila_k['Tiempo preparación abast. (en días)']) if pd.notna(fila_k['Tiempo preparación abast. (en días)']) else 1, key="m_tiempo_abast")
+                    
+                    if st.button("💾 Guardar Cambios", type="primary", use_container_width=True, key="btn_save_mod"):
+                        if m_tipo_kanban == "TARJETA" and m_cant_pp >= m_cant_repo:
+                            st.error(f"❌ Para tipo TARJETA, la Cantidad Punto de Pedido ({m_cant_pp}) debe ser ESTRICTAMENTE MENOR a la Cantidad Reposición ({m_cant_repo}).")
+                        else:
                             now_str = obtener_fecha_hora_arg()
                             user_act = st.session_state['usuario_email']
                             
@@ -997,7 +1021,7 @@ if tab_mod:
                             df_kanbans.loc[idx_global, 'Tipo Kanban'] = m_tipo_kanban
                             df_kanbans.loc[idx_global, 'Medio'] = m_medio
                             df_kanbans.loc[idx_global, 'Material'] = m_material
-                            df_kanbans.loc[idx_global, 'Centro'] = m_centro
+                            df_kanbans.loc[idx_global, 'Centro'] = "A110"
                             df_kanbans.loc[idx_global, 'Almacén Origen'] = m_alm_origen
                             df_kanbans.loc[idx_global, 'Almacen Destino'] = m_alm_destino
                             df_kanbans.loc[idx_global, 'Puesto trabajo Origen'] = m_puesto_origen
@@ -1044,7 +1068,7 @@ if tab_consulta:
         with col_f2:
             filtro_alm_dest = st.selectbox("Filtrar por Almacén Destino:", ["Todos"] + LISTA_ALMACENES, key="cons_alm")
         with col_f3:
-            filtro_tipo = st.selectbox("Filtrar por Tipo Kanban:", ["Todos", "TARJETA", "GAVETA"], key="cons_tipo")
+            filtro_tipo = st.selectbox("Filtrar por Tipo Kanban:", ["Todos", "GAVETA", "TARJETA"], key="cons_tipo")
             
         df_ver = df_kanbans.copy()
         
