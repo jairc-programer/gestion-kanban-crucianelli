@@ -190,7 +190,6 @@ ALMACENES_PUESTOS = {
 
 LISTA_ALMACENES = list(ALMACENES_PUESTOS.keys())
 
-# Opciones actualizadas según regla estricta
 OPCIONES_SOPORTE_TARJETA = ["SIN MEDIO DEFINIDO", "PALLET CHICO", "PALLET GRANDE", "CANASTO", "CAPACHO CHICO", "CAPACHO GRANDE", "RACK"]
 OPCIONES_GAVETA = ["S", "M", "L", "XL"]
 
@@ -333,34 +332,82 @@ def actualizar_base_kanbans(nuevo_df):
         pass
 
 def cargar_packaging():
+    """
+    Carga el archivo Excel de Packaging flexibilizando la detección de columnas.
+    Busca columnas de Material, Lote (Packaging), Unidad y Medio.
+    """
     if os.path.exists(PKG_FILE):
         try:
             df = pd.read_excel(PKG_FILE)
-            df['Material'] = df['Material'].astype(str).str.strip().str.upper()
+            cols_upper = {str(c).strip().upper(): c for c in df.columns}
             
+            # 1. Búsqueda de Columna Material
+            mat_col = None
+            for k in ['MATERIAL', 'CODIGO', 'CÓDIGO', 'MATERIAL (CÓDIGO SAP)', 'MAT', 'CODIGO MATERIAL']:
+                if k in cols_upper:
+                    mat_col = cols_upper[k]
+                    break
+            if not mat_col and len(df.columns) > 0:
+                mat_col = df.columns[0]
+
+            # 2. Búsqueda de Columna Lote
+            lote_col = None
+            for k in ['LOTE PACKAGING', 'LOTE', 'LOTE PACKING', 'CANTIDAD', 'LOTE REPOSICION', 'LOTE DE PACKAGING', 'PACKAGING LOTE', 'CANTIDAD REPOSICION', 'LOTE_PACKAGING', 'LOTE PACKAING', 'PACKAING LOTE']:
+                if k in cols_upper:
+                    lote_col = cols_upper[k]
+                    break
+
+            # 3. Búsqueda de Columna UM
+            um_col = None
+            for k in ['UNIDAD', 'UM', 'UNIDAD REPOSICION', 'UNIDAD DE MEDIDA', 'UNIDAD REPOSICIÓN']:
+                if k in cols_upper:
+                    um_col = cols_upper[k]
+                    break
+
+            # 4. Búsqueda de Columna Medio / Packaging
+            medio_col = None
+            for k in ['PACKAGING', 'PACKAING', 'MEDIO', 'SOPORTE', 'MEDIO/PACKAGING']:
+                if k in cols_upper:
+                    medio_col = cols_upper[k]
+                    break
+
             dict_pkg = {}
             for _, r in df.iterrows():
-                mat = r['Material']
-                medio_val = str(r.get('Packaging', r.get('Packaing', r.get('Medio', '')))).strip()
-                unid_val = str(r.get('Unidad', r.get('UM', r.get('Unidad Reposicion', 'ST')))).strip().upper()
-                
-                # Búsqueda dinámica de la columna de lote de packaging
-                lote_val = 1.0
-                for col in ['Lote', 'Lote Packaging', 'Lote packaging', 'Cantidad', 'Cant', 'Lote Reposicion']:
-                    if col in r and pd.notna(r[col]):
+                if mat_col and pd.notna(r[mat_col]):
+                    mat = str(r[mat_col]).strip().upper()
+                    if not mat or mat == "NAN":
+                        continue
+                    
+                    # Lote
+                    lote_val = 1.0
+                    if lote_col and pd.notna(r[lote_col]):
                         try:
-                            val_f = float(r[col])
+                            val_clean = str(r[lote_col]).replace(',', '.').strip()
+                            val_f = float(val_clean)
                             if val_f > 0:
                                 lote_val = val_f
-                                break
                         except (ValueError, TypeError):
                             pass
 
-                dict_pkg[mat] = {
-                    "medio": medio_val, 
-                    "unidad": unid_val if unid_val != 'NAN' else 'ST',
-                    "lote": lote_val
-                }
+                    # UM
+                    um_val = "ST"
+                    if um_col and pd.notna(r[um_col]):
+                        u_clean = str(r[um_col]).strip().upper()
+                        if u_clean and u_clean != "NAN":
+                            um_val = u_clean
+
+                    # Medio
+                    medio_val = ""
+                    if medio_col and pd.notna(r[medio_col]):
+                        m_clean = str(r[medio_col]).strip()
+                        if m_clean and m_clean.upper() != "NAN":
+                            medio_val = m_clean
+
+                    dict_pkg[mat] = {
+                        "medio": medio_val,
+                        "unidad": um_val,
+                        "lote": lote_val
+                    }
             return dict_pkg
         except Exception:
             return {}
@@ -848,7 +895,7 @@ if tab_tracker:
                     st.markdown("---")
 
 # ==========================================
-# VISTA: CREAR NUEVO KANBAN (PROCESOS) - CON REGLAS KE Y MEDIO ACTUALIZADAS
+# VISTA: CREAR NUEVO KANBAN (PROCESOS)
 # ==========================================
 tab_crear = obtener_tab("➕ Crear Nuevo Kanban")
 if tab_crear:
@@ -857,18 +904,39 @@ if tab_crear:
         
         col1, col2 = st.columns(2)
         
+        # Inicializar variables de estado para reactividad
+        if 'c_cant_repo' not in st.session_state:
+            st.session_state['c_cant_repo'] = 10.0
+        if 'c_unid_repo' not in st.session_state:
+            st.session_state['c_unid_repo'] = "ST"
+        if 'last_searched_mat' not in st.session_state:
+            st.session_state['last_searched_mat'] = ""
+
         with col1:
             tipo_etiqueta = st.selectbox("Tipo de Etiqueta:", ["KI", "KE"], key="c_tipo_etiq")
             material_input = st.text_input("Material (Código SAP):", key="c_mat_input").strip().upper()
             
-            # Búsqueda automática en Lote Packaging
             info_pkg = dict_pkg.get(material_input, {})
             um_sugerida = info_pkg.get('unidad', 'ST')
             medio_pkg_sugerido = info_pkg.get('medio', '')
             lote_pkg_sugerido = float(info_pkg.get('lote', 1.0))
             
-            if material_input and info_pkg:
-                st.caption(f"ℹ️ Material en packaging: **UM:** {um_sugerida} | **Lote Packaging / Reposición Mínimo:** {lote_pkg_sugerido}")
+            # Al cambiar de material, sincroniza automáticamente el Lote Sugerido al campo de edición
+            if material_input and material_input != st.session_state['last_searched_mat']:
+                st.session_state['last_searched_mat'] = material_input
+                if info_pkg:
+                    st.session_state['c_cant_repo'] = lote_pkg_sugerido
+                    st.session_state['c_unid_repo'] = um_sugerida
+                else:
+                    st.session_state['c_cant_repo'] = 1.0
+                    st.session_state['c_unid_repo'] = "ST"
+                st.rerun()
+
+            if material_input:
+                if info_pkg:
+                    st.caption(f"ℹ️ Material en packaging: **UM:** {um_sugerida} | **Lote Packaging / Reposición Sugerido:** {lote_pkg_sugerido}")
+                else:
+                    st.caption("ℹ️ Material no encontrado en la planilla de packaging (Se asignan valores por defecto).")
 
             centro = st.text_input("Centro:", value="A110", disabled=True, help="El centro de producción es fijo: A110")
             
@@ -887,7 +955,7 @@ if tab_crear:
             
             tipo_kanban = st.radio("Tipo de Kanban:", ["GAVETA", "TARJETA"], horizontal=True, key="c_tipo_kb")
             
-            # REGLA MEDIO: Opciones según si es GAVETA ("S", "M", "L", "XL") o TARJETA
+            # Opciones de Medio estrictas según Tipo de Kanban
             if tipo_kanban == "GAVETA":
                 lista_medios = OPCIONES_GAVETA
                 idx_default = 0
@@ -905,21 +973,10 @@ if tab_crear:
         col_cant1, col_cant2, col_cant3 = st.columns(3)
         
         with col_cant1:
-            if tipo_etiqueta == "KE" and material_input and lote_pkg_sugerido > 0:
-                min_repo_val = lote_pkg_sugerido
-                step_repo_val = lote_pkg_sugerido
-                default_repo_val = lote_pkg_sugerido
-            else:
-                min_repo_val = 1.0
-                step_repo_val = 1.0
-                default_repo_val = 10.0
-
-            cant_repo = st.number_input("Cantidad Reposición:", min_value=min_repo_val, step=step_repo_val, value=default_repo_val, key="c_cant_repo")
-            if tipo_etiqueta == "KE" and material_input and lote_pkg_sugerido > 0:
-                st.caption(f"⚠️ Para KE, la cantidad debe ser MÚLTIPLO EXACTO de **{lote_pkg_sugerido}**.")
+            cant_repo = st.number_input("Cantidad Reposición:", min_value=1.0, step=1.0, key="c_cant_repo")
 
         with col_cant2:
-            unid_repo = st.text_input("Unidad Reposición:", value=um_sugerida, key="c_unid_repo").strip().upper()
+            unid_repo = st.text_input("Unidad Reposición:", key="c_unid_repo").strip().upper()
             
         with col_cant3:
             if tipo_kanban == "GAVETA":
@@ -934,8 +991,6 @@ if tab_crear:
                 st.error("❌ El código de Material es obligatorio.")
             elif tipo_kanban == "TARJETA" and cant_pp >= cant_repo:
                 st.error(f"❌ Para tipo TARJETA, la Cantidad Punto de Pedido ({cant_pp}) debe ser ESTRICTAMENTE MENOR a la Cantidad Reposición ({cant_repo}).")
-            elif tipo_etiqueta == "KE" and lote_pkg_sugerido > 0 and (cant_repo % lote_pkg_sugerido != 0):
-                st.error(f"❌ Para Kanban KE (Externo), la Cantidad Reposición ({cant_repo}) debe ser un MÚLTIPLO EXACTO del lote de packaging ({lote_pkg_sugerido}). Ejemplos permitidos: {lote_pkg_sugerido}, {lote_pkg_sugerido*2}, {lote_pkg_sugerido*3}, etc.")
             else:
                 nuevo_k = obtener_siguiente_codigo_k(df_kanbans)
                 now_str = obtener_fecha_hora_arg()
@@ -1001,9 +1056,6 @@ if tab_mod:
                         m_tipo_etiqueta = st.selectbox("Tipo Etiqueta:", ["KI", "KE"], index=0 if fila_k['Tipo Etiqueta'] == "KI" else 1, key="m_tipo_etiq")
                         m_material = st.text_input("Material:", value=str(fila_k['Material']), key="m_mat_in").strip().upper()
                         
-                        info_pkg_m = dict_pkg.get(m_material, {})
-                        lote_pkg_m = float(info_pkg_m.get('lote', 1.0))
-                        
                         m_centro = st.text_input("Centro:", value="A110", disabled=True)
                         
                         if m_tipo_etiqueta == "KE":
@@ -1042,8 +1094,6 @@ if tab_mod:
                     
                     with col_m_c1:
                         m_cant_repo = st.number_input("Cantidad Reposición:", value=float(fila_k['Cantidad Reposicion']) if pd.notna(fila_k['Cantidad Reposicion']) else 10.0, key="m_cant_repo")
-                        if m_tipo_etiqueta == "KE" and m_material and lote_pkg_m > 0:
-                            st.caption(f"⚠️ Para KE, lote mínimo: **{lote_pkg_m}** (Múltiplo obligatorio).")
                     with col_m_c2:
                         m_unid_repo = st.text_input("Unidad Reposición:", value=str(fila_k['Unidad Reposicion']), key="m_unid_repo").strip().upper()
                     with col_m_c3:
@@ -1058,8 +1108,6 @@ if tab_mod:
                     if st.button("💾 Guardar Cambios", type="primary", use_container_width=True, key="btn_save_mod"):
                         if m_tipo_kanban == "TARJETA" and m_cant_pp >= m_cant_repo:
                             st.error(f"❌ Para tipo TARJETA, la Cantidad Punto de Pedido ({m_cant_pp}) debe ser ESTRICTAMENTE MENOR a la Cantidad Reposición ({m_cant_repo}).")
-                        elif m_tipo_etiqueta == "KE" and lote_pkg_m > 0 and (m_cant_repo % lote_pkg_m != 0):
-                            st.error(f"❌ Para Kanban KE (Externo), la Cantidad Reposición ({m_cant_repo}) debe ser un MÚLTIPLO EXACTO del lote de packaging ({lote_pkg_m}).")
                         else:
                             now_str = obtener_fecha_hora_arg()
                             user_act = st.session_state['usuario_email']
