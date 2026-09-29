@@ -1026,7 +1026,6 @@ if tab_crear:
         # --- 3. CANTIDADES Y VALORES PRECARGADOS ---
         col_cant1, col_cant2, col_cant3 = st.columns(3)
 
-        # Lote de Reaprovisionamiento inicial sugerido (por defecto 10.0 si no hay en packaging)
         val_cant_repo_init = (
             float(cant_pkg_sugerida)
             if cant_pkg_sugerida is not None
@@ -1057,7 +1056,6 @@ if tab_crear:
             )
 
         with col_cant3:
-            # Si el medio/tipo es GAVETA, el punto de pedido se precarga idéntico a la cantidad de reposición
             if tipo_kanban == "GAVETA":
                 cant_pp = st.number_input(
                     "Cantidad Punto de Pedido:",
@@ -1159,6 +1157,14 @@ if tab_crear:
                 )
                 st.rerun()
 
+# ==========================================
+# VISTA: MODIFICAR Y ELIMINAR (PROCESOS)
+# ==========================================
+tab_mod = obtener_tab("✏️ Modificar y Eliminar")
+if tab_mod:
+    with tab_mod:
+        st.subheader("✏️ Modificación o Eliminación de Kanban")
+        # Coloca aquí todo el código original correspondiente a esta pestaña, respetando la sangría (4 espacios/1 tab).
 # ==========================================
 # VISTA: MODIFICAR Y ELIMINAR (PROCESOS)
 # ==========================================
