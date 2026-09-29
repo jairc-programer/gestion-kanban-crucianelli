@@ -189,8 +189,10 @@ ALMACENES_PUESTOS = {
 }
 
 LISTA_ALMACENES = list(ALMACENES_PUESTOS.keys())
+
+# Opciones actualizadas según regla estricta
 OPCIONES_SOPORTE_TARJETA = ["SIN MEDIO DEFINIDO", "PALLET CHICO", "PALLET GRANDE", "CANASTO", "CAPACHO CHICO", "CAPACHO GRANDE", "RACK"]
-OPCIONES_GAVETA = ["GAVETA S", "GAVETA M", "GAVETA L", "GAVETA XL", "S", "M", "L", "XL"]
+OPCIONES_GAVETA = ["S", "M", "L", "XL"]
 
 if 'usuario_email' not in st.session_state:
     st.session_state['usuario_email'] = None
@@ -341,7 +343,24 @@ def cargar_packaging():
                 mat = r['Material']
                 medio_val = str(r.get('Packaging', r.get('Packaing', r.get('Medio', '')))).strip()
                 unid_val = str(r.get('Unidad', r.get('UM', r.get('Unidad Reposicion', 'ST')))).strip().upper()
-                dict_pkg[mat] = {"medio": medio_val, "unidad": unid_val if unid_val != 'NAN' else 'ST'}
+                
+                # Búsqueda dinámica de la columna de lote de packaging
+                lote_val = 1.0
+                for col in ['Lote', 'Lote Packaging', 'Lote packaging', 'Cantidad', 'Cant', 'Lote Reposicion']:
+                    if col in r and pd.notna(r[col]):
+                        try:
+                            val_f = float(r[col])
+                            if val_f > 0:
+                                lote_val = val_f
+                                break
+                        except (ValueError, TypeError):
+                            pass
+
+                dict_pkg[mat] = {
+                    "medio": medio_val, 
+                    "unidad": unid_val if unid_val != 'NAN' else 'ST',
+                    "lote": lote_val
+                }
             return dict_pkg
         except Exception:
             return {}
@@ -524,7 +543,6 @@ if tab_kpis:
         df_k_live = obtener_base_kanbans()
         df_tr_kpi = cargar_tracker()
         
-        # --- FILTROS GLOBALES DE KPIS ---
         with st.expander("🔍 Filtros de Análisis", expanded=True):
             f_col1, f_col2, f_col3 = st.columns(3)
             
@@ -552,7 +570,6 @@ if tab_kpis:
                         puestos_disp += sorted([str(x) for x in df_k_live['Puesto de trabajo destino'].dropna().unique() if str(x).strip() != ""])
                 f_puesto = st.selectbox("Puesto de Trabajo Destino:", puestos_disp, key="kpi_puesto")
 
-        # --- FILTRADO DE DATOS VIVOS (BASE KANBANS) ---
         df_k_filtrado = df_k_live.copy() if not df_k_live.empty else pd.DataFrame()
         if not df_k_filtrado.empty:
             if f_alm != "Todos":
@@ -560,7 +577,6 @@ if tab_kpis:
             if f_puesto != "Todos":
                 df_k_filtrado = df_k_filtrado[df_k_filtrado['Puesto de trabajo destino'] == f_puesto]
 
-        # --- FILTRADO DE LOGS DE AUDITORÍA ---
         df_logs_filtrado = df_logs_kpi.copy() if not df_logs_kpi.empty else pd.DataFrame()
         if not df_logs_filtrado.empty and isinstance(rango_fechas_kpi, tuple) and len(rango_fechas_kpi) == 2:
             fi, ff = rango_fechas_kpi
@@ -570,7 +586,6 @@ if tab_kpis:
             if f_puesto != "Todos" and 'Puesto_Destino' in df_logs_filtrado.columns: 
                 df_logs_filtrado = df_logs_filtrado[df_logs_filtrado['Puesto_Destino'] == f_puesto]
 
-        # --- FILTRADO DEL TRACKER LOGÍSTICO ---
         df_tr_filtrado = df_tr_kpi.copy() if not df_tr_kpi.empty else pd.DataFrame()
         if not df_tr_filtrado.empty and f_puesto != "Todos" and 'Puesto_Destino' in df_tr_filtrado.columns:
             df_tr_filtrado = df_tr_filtrado[df_tr_filtrado['Puesto_Destino'] == f_puesto]
@@ -589,7 +604,7 @@ if tab_kpis:
         m1, m2, m3, m4, m5, m6 = st.columns(6)
         m1.metric("KB Activos", len(df_k_filtrado))
         m2.metric("✨ Creados", c_creados)
-        m3.metric("✏️️ Modificados", c_actualizados)
+        m3.metric("✏ Modificados", c_actualizados)
         m4.metric("🗑️ Eliminados", c_eliminados)
         m5.metric("⏳ Pendiente SAP", pend_sap, delta=f"{pend_sap} pendientes", delta_color="inverse")
         m6.metric("🚚 Pend. Físico", pend_fisico, delta=f"{pend_fisico} pendientes", delta_color="inverse")
@@ -699,7 +714,7 @@ if tab_kpis:
                 st.info("El Tracker de Ejecución Logística no contiene registros.")
 
 # ==========================================
-# VISTA: TRACKER DE EJECUCIÓN LOGÍSTICA (PERMISOS RESTRINGIDOS A LOGISTICA)
+# VISTA: TRACKER DE EJECUCIÓN LOGÍSTICA
 # ==========================================
 tab_tracker = obtener_tab("🚚 Tracker de Ejecución Logística") or obtener_tab("🚚 Estado de Solicitudes")
 if tab_tracker:
@@ -833,7 +848,7 @@ if tab_tracker:
                     st.markdown("---")
 
 # ==========================================
-# VISTA: CREAR NUEVO KANBAN (PROCESOS) - REGLAS Y PARAMETRIZACIONES COMPLETAS
+# VISTA: CREAR NUEVO KANBAN (PROCESOS) - CON REGLAS KE Y MEDIO ACTUALIZADAS
 # ==========================================
 tab_crear = obtener_tab("➕ Crear Nuevo Kanban")
 if tab_crear:
@@ -850,13 +865,20 @@ if tab_crear:
             info_pkg = dict_pkg.get(material_input, {})
             um_sugerida = info_pkg.get('unidad', 'ST')
             medio_pkg_sugerido = info_pkg.get('medio', '')
+            lote_pkg_sugerido = float(info_pkg.get('lote', 1.0))
             
             if material_input and info_pkg:
-                st.caption(f"ℹ️ Material encontrado en packaging: **UM Base:** {um_sugerida}")
+                st.caption(f"ℹ️ Material en packaging: **UM:** {um_sugerida} | **Lote Packaging / Reposición Mínimo:** {lote_pkg_sugerido}")
 
             centro = st.text_input("Centro:", value="A110", disabled=True, help="El centro de producción es fijo: A110")
-            alm_origen = st.selectbox("Almacén Origen:", LISTA_ALMACENES, index=0, key="c_alm_orig")
-            puesto_origen = st.text_input("Puesto trabajo Origen:", key="c_puesto_orig").strip().upper()
+            
+            # REGLA KANBAN KE: Almacén Origen L010 y Puesto PRINCIPAL fijos
+            if tipo_etiqueta == "KE":
+                alm_origen = st.text_input("Almacén Origen:", value="L010", disabled=True, key="c_alm_orig_dis")
+                puesto_origen = st.text_input("Puesto trabajo Origen:", value="PRINCIPAL", disabled=True, key="c_puesto_orig_dis")
+            else:
+                alm_origen = st.selectbox("Almacén Origen:", LISTA_ALMACENES, index=0, key="c_alm_orig")
+                puesto_origen = st.text_input("Puesto trabajo Origen:", key="c_puesto_orig").strip().upper()
             
         with col2:
             alm_destino = st.selectbox("Almacén Destino:", LISTA_ALMACENES, index=1, key="c_alm_dest")
@@ -865,27 +887,40 @@ if tab_crear:
             
             tipo_kanban = st.radio("Tipo de Kanban:", ["GAVETA", "TARJETA"], horizontal=True, key="c_tipo_kb")
             
-            # Selección dinámica de Medio según tipo de Kanban
+            # REGLA MEDIO: Opciones según si es GAVETA ("S", "M", "L", "XL") o TARJETA
             if tipo_kanban == "GAVETA":
                 lista_medios = OPCIONES_GAVETA
                 idx_default = 0
                 if medio_pkg_sugerido in lista_medios:
                     idx_default = lista_medios.index(medio_pkg_sugerido)
-                medio = st.selectbox("Medio / Tamaño Gaveta:", lista_medios, index=idx_default, key="c_medio_gav")
+                medio = st.selectbox("Medio:", lista_medios, index=idx_default, key="c_medio_gav")
             else:
                 lista_medios = OPCIONES_SOPORTE_TARJETA
                 idx_default = 0
                 if medio_pkg_sugerido in lista_medios:
                     idx_default = lista_medios.index(medio_pkg_sugerido)
-                medio = st.selectbox("Medio / Soporte Tarjeta:", lista_medios, index=idx_default, key="c_medio_tarj")
+                medio = st.selectbox("Medio:", lista_medios, index=idx_default, key="c_medio_tarj")
                 
         st.markdown("---")
         col_cant1, col_cant2, col_cant3 = st.columns(3)
         
         with col_cant1:
-            cant_repo = st.number_input("Cantidad Reposición:", min_value=1.0, step=1.0, value=10.0, key="c_cant_repo")
+            if tipo_etiqueta == "KE" and material_input and lote_pkg_sugerido > 0:
+                min_repo_val = lote_pkg_sugerido
+                step_repo_val = lote_pkg_sugerido
+                default_repo_val = lote_pkg_sugerido
+            else:
+                min_repo_val = 1.0
+                step_repo_val = 1.0
+                default_repo_val = 10.0
+
+            cant_repo = st.number_input("Cantidad Reposición:", min_value=min_repo_val, step=step_repo_val, value=default_repo_val, key="c_cant_repo")
+            if tipo_etiqueta == "KE" and material_input and lote_pkg_sugerido > 0:
+                st.caption(f"⚠️ Para KE, la cantidad debe ser MÚLTIPLO EXACTO de **{lote_pkg_sugerido}**.")
+
         with col_cant2:
             unid_repo = st.text_input("Unidad Reposición:", value=um_sugerida, key="c_unid_repo").strip().upper()
+            
         with col_cant3:
             if tipo_kanban == "GAVETA":
                 cant_pp = st.number_input("Cantidad Punto de Pedido:", value=cant_repo, disabled=True, help="En GAVETA, la Cantidad Punto de Pedido es idéntica a la Cantidad Reposición.", key="c_cant_pp_gav")
@@ -899,6 +934,8 @@ if tab_crear:
                 st.error("❌ El código de Material es obligatorio.")
             elif tipo_kanban == "TARJETA" and cant_pp >= cant_repo:
                 st.error(f"❌ Para tipo TARJETA, la Cantidad Punto de Pedido ({cant_pp}) debe ser ESTRICTAMENTE MENOR a la Cantidad Reposición ({cant_repo}).")
+            elif tipo_etiqueta == "KE" and lote_pkg_sugerido > 0 and (cant_repo % lote_pkg_sugerido != 0):
+                st.error(f"❌ Para Kanban KE (Externo), la Cantidad Reposición ({cant_repo}) debe ser un MÚLTIPLO EXACTO del lote de packaging ({lote_pkg_sugerido}). Ejemplos permitidos: {lote_pkg_sugerido}, {lote_pkg_sugerido*2}, {lote_pkg_sugerido*3}, etc.")
             else:
                 nuevo_k = obtener_siguiente_codigo_k(df_kanbans)
                 now_str = obtener_fecha_hora_arg()
@@ -938,7 +975,7 @@ if tab_crear:
 tab_mod = obtener_tab("✏️ Modificar y Eliminar")
 if tab_mod:
     with tab_mod:
-        st.subheader("✏️️ Modificación y Eliminación de Kanbans")
+        st.subheader("✏ Modificación y Eliminación de Kanbans")
         
         busqueda = st.text_input("🔍 Buscar por Código K o Material:", key="mod_search").strip().upper()
         
@@ -963,11 +1000,19 @@ if tab_mod:
                     with col1:
                         m_tipo_etiqueta = st.selectbox("Tipo Etiqueta:", ["KI", "KE"], index=0 if fila_k['Tipo Etiqueta'] == "KI" else 1, key="m_tipo_etiq")
                         m_material = st.text_input("Material:", value=str(fila_k['Material']), key="m_mat_in").strip().upper()
+                        
+                        info_pkg_m = dict_pkg.get(m_material, {})
+                        lote_pkg_m = float(info_pkg_m.get('lote', 1.0))
+                        
                         m_centro = st.text_input("Centro:", value="A110", disabled=True)
                         
-                        idx_origen = LISTA_ALMACENES.index(fila_k['Almacén Origen']) if fila_k['Almacén Origen'] in LISTA_ALMACENES else 0
-                        m_alm_origen = st.selectbox("Almacén Origen:", LISTA_ALMACENES, index=idx_origen, key="m_alm_orig")
-                        m_puesto_origen = st.text_input("Puesto trabajo Origen:", value=str(fila_k['Puesto trabajo Origen']), key="m_puesto_orig").strip().upper()
+                        if m_tipo_etiqueta == "KE":
+                            m_alm_origen = st.text_input("Almacén Origen:", value="L010", disabled=True, key="m_alm_orig_ke")
+                            m_puesto_origen = st.text_input("Puesto trabajo Origen:", value="PRINCIPAL", disabled=True, key="m_puesto_orig_ke")
+                        else:
+                            idx_origen = LISTA_ALMACENES.index(fila_k['Almacén Origen']) if fila_k['Almacén Origen'] in LISTA_ALMACENES else 0
+                            m_alm_origen = st.selectbox("Almacén Origen:", LISTA_ALMACENES, index=idx_origen, key="m_alm_orig")
+                            m_puesto_origen = st.text_input("Puesto trabajo Origen:", value=str(fila_k['Puesto trabajo Origen']), key="m_puesto_orig").strip().upper()
                         
                     with col2:
                         idx_dest = LISTA_ALMACENES.index(fila_k['Almacen Destino']) if fila_k['Almacen Destino'] in LISTA_ALMACENES else 0
@@ -986,17 +1031,19 @@ if tab_mod:
                         if m_tipo_kanban == "GAVETA":
                             lista_m = OPCIONES_GAVETA
                             idx_med = lista_m.index(medio_act) if medio_act in lista_m else 0
-                            m_medio = st.selectbox("Medio / Tamaño Gaveta:", lista_m, index=idx_med, key="m_medio_gav")
+                            m_medio = st.selectbox("Medio:", lista_m, index=idx_med, key="m_medio_gav")
                         else:
                             lista_m = OPCIONES_SOPORTE_TARJETA
                             idx_med = lista_m.index(medio_act) if medio_act in lista_m else 0
-                            m_medio = st.selectbox("Medio / Soporte Tarjeta:", lista_m, index=idx_med, key="m_medio_tarj")
+                            m_medio = st.selectbox("Medio:", lista_m, index=idx_med, key="m_medio_tarj")
                             
                     st.markdown("---")
                     col_m_c1, col_m_c2, col_m_c3 = st.columns(3)
                     
                     with col_m_c1:
                         m_cant_repo = st.number_input("Cantidad Reposición:", value=float(fila_k['Cantidad Reposicion']) if pd.notna(fila_k['Cantidad Reposicion']) else 10.0, key="m_cant_repo")
+                        if m_tipo_etiqueta == "KE" and m_material and lote_pkg_m > 0:
+                            st.caption(f"⚠️ Para KE, lote mínimo: **{lote_pkg_m}** (Múltiplo obligatorio).")
                     with col_m_c2:
                         m_unid_repo = st.text_input("Unidad Reposición:", value=str(fila_k['Unidad Reposicion']), key="m_unid_repo").strip().upper()
                     with col_m_c3:
@@ -1011,6 +1058,8 @@ if tab_mod:
                     if st.button("💾 Guardar Cambios", type="primary", use_container_width=True, key="btn_save_mod"):
                         if m_tipo_kanban == "TARJETA" and m_cant_pp >= m_cant_repo:
                             st.error(f"❌ Para tipo TARJETA, la Cantidad Punto de Pedido ({m_cant_pp}) debe ser ESTRICTAMENTE MENOR a la Cantidad Reposición ({m_cant_repo}).")
+                        elif m_tipo_etiqueta == "KE" and lote_pkg_m > 0 and (m_cant_repo % lote_pkg_m != 0):
+                            st.error(f"❌ Para Kanban KE (Externo), la Cantidad Reposición ({m_cant_repo}) debe ser un MÚLTIPLO EXACTO del lote de packaging ({lote_pkg_m}).")
                         else:
                             now_str = obtener_fecha_hora_arg()
                             user_act = st.session_state['usuario_email']
