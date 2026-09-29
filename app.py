@@ -610,7 +610,7 @@ if tab_tracker:
                         st.rerun()
 
 # ==========================================
-# VISTA: CREAR KANBAN (CONTROLES ESTRICTOS Y UNICIDAD)
+# VISTA: CREAR KANBAN (CONTROLES BLINDADOS)
 # ==========================================
 tab_crear = obtener_tab("➕ Crear Nuevo Kanban")
 if tab_crear:
@@ -656,14 +656,15 @@ if tab_crear:
 
         if st.button("💾 Guardar y Crear Kanban", type="primary"):
             df_curr = obtener_base_kanbans()
+            max_pp_permitido = max(0.0, cant_repo - 1.0) if cant_repo > 0 else 0.0
             
             # --- VALIDACIÓN 1: CAMPOS OBLIGATORIOS ---
             if not material or puesto_destino in ["-- Seleccionar --", ""]:
                 st.error("❌ Error: Código de Material y Puesto Destino son campos obligatorios.")
             
-            # --- VALIDACIÓN 2: LÓGICA LOGÍSTICA PUNTO DE PEDIDO < REPOSICIÓN ---
-            elif tipo_soporte == "TARJETA" and cant_pp >= cant_repo:
-                st.error(f"🚫 PROHIBIDO: En Kanbans tipo TARJETA, el Punto de Pedido ({cant_pp}) DEBE SER MENOR a la Cantidad de Reposición ({cant_repo}).")
+            # --- VALIDACIÓN 2: LÓGICA LOGÍSTICA PUNTO DE PEDIDO < REPOSICIÓN (INQUEBRANTABLE) ---
+            elif tipo_soporte == "TARJETA" and (cant_pp >= cant_repo or cant_pp > max_pp_permitido):
+                st.error(f"🚫 ACCIÓN BLOQUEADA: En Kanbans tipo TARJETA, el Punto de Pedido ({cant_pp}) DEBE SER ESTRICTAMENTE MENOR a la Cantidad de Reposición ({cant_repo}). Máximo permitido: {max_pp_permitido}.")
             
             # --- VALIDACIÓN 3: REGLA DE UNICIDAD (MATERIAL + PUESTO DESTINO) ---
             elif not df_curr.empty and len(
@@ -685,6 +686,8 @@ if tab_crear:
                 usr_act = st.session_state['usuario_email']
                 codigo_k_nuevo = obtener_siguiente_codigo_k(df_curr)
                 
+                cant_pp_final = cant_repo if tipo_soporte == "GAVETA" else min(float(cant_pp), max_pp_permitido)
+                
                 nuevo_reg = {
                     'N° Etiquetas': str(codigo_k_nuevo), 
                     'Tipo Etiqueta': str(tipo_etiqueta_sap),
@@ -698,7 +701,7 @@ if tab_crear:
                     'Puesto de trabajo destino': str(puesto_destino),
                     'Cantidad Reposicion': cant_repo, 
                     'Unidad Reposicion': str(unidad),
-                    'Cantidad Punto de Pedido': cant_pp, 
+                    'Cantidad Punto de Pedido': cant_pp_final, 
                     'Tiempo preparación abast. (en días)': dias_prep,
                     'Fecha Modificación': fecha_actual, 
                     'Usuario Modificación': str(usr_act)
@@ -768,11 +771,14 @@ if tab_mod:
                             m_cant_pp = st.number_input("Cantidad Punto Pedido", min_value=0.0, max_value=max_m_pp, value=min(float(row['Cantidad Punto de Pedido'] or 0.0), max_m_pp), key="m_cant_p_t")
 
                     if st.button("💾 Guardar Cambios", type="primary"):
-                        if m_tipo_soporte == "TARJETA" and m_cant_pp >= m_cant_repo:
-                            st.error(f"🚫 PROHIBIDO: En Kanbans tipo TARJETA, el Punto de Pedido ({m_cant_pp}) DEBE SER MENOR a la Cantidad de Reposición ({m_cant_repo}).")
+                        max_m_pp = max(0.0, m_cant_repo - 1.0) if m_cant_repo > 0 else 0.0
+                        if m_tipo_soporte == "TARJETA" and (m_cant_pp >= m_cant_repo or m_cant_pp > max_m_pp):
+                            st.error(f"🚫 ACCIÓN BLOQUEADA: En Kanbans tipo TARJETA, el Punto de Pedido ({m_cant_pp}) DEBE SER MENOR a la Cantidad de Reposición ({m_cant_repo}).")
                         else:
                             usr_act = st.session_state['usuario_email']
                             idx = df_live[df_live['N° Etiquetas'] == k_sel].index[0]
+                            
+                            m_cant_pp_final = m_cant_repo if m_tipo_soporte == "GAVETA" else min(float(m_cant_pp), max_m_pp)
                             
                             df_live.loc[idx, 'Tipo Kanban'] = m_tipo_soporte
                             df_live.loc[idx, 'Medio'] = m_medio_str
@@ -780,7 +786,7 @@ if tab_mod:
                             df_live.loc[idx, 'Almacen Destino'] = m_almacen_destino
                             df_live.loc[idx, 'Puesto de trabajo destino'] = m_puesto_destino
                             df_live.loc[idx, 'Cantidad Reposicion'] = m_cant_repo
-                            df_live.loc[idx, 'Cantidad Punto de Pedido'] = m_cant_pp
+                            df_live.loc[idx, 'Cantidad Punto de Pedido'] = m_cant_pp_final
                             df_live.loc[idx, 'Fecha Modificación'] = obtener_fecha_hora_arg()
                             df_live.loc[idx, 'Usuario Modificación'] = usr_act
                             
