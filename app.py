@@ -498,9 +498,6 @@ if tab_crear:
             else:
                 medio_str = st.selectbox("Medio Físico", OPCIONES_SOPORTE_TARJETA)
 
-            puesto_dest_sel = st.selectbox("Puesto de Trabajo Destino", ["-- Seleccionar / Nuevo --"] + ALMACENES_PUESTOS.get("P140", []))
-            puesto_dest_manual = st.text_input("Escriba el Puesto Destino", placeholder="O ingrese un puesto nuevo").upper().strip()
-
         with col2:
             almacen_origen = st.selectbox("Almacén Origen", LISTA_ALMACENES, index=LISTA_ALMACENES.index("L010"))
             almacen_destino = st.selectbox("Almacén Destino", LISTA_ALMACENES, index=LISTA_ALMACENES.index("P140"))
@@ -514,9 +511,15 @@ if tab_crear:
                 puesto_origen_sel = st.selectbox("Puesto de Trabajo Origen", puesto_origen_opts)
                 puesto_origen = puesto_origen_sel if puesto_origen_sel != "-- Seleccionar --" else "-"
             else:
-                st.info("ℹ️ Abastecimiento EXTERNO (KE)")
+                st.info("ℹ️️ Abastecimiento EXTERNO (KE)")
                 st.text_input("Puesto de Trabajo Origen", value="- No aplica (Externo L010) -", disabled=True)
                 puesto_origen = "-"
+
+            opts_p_dest = ALMACENES_PUESTOS.get(almacen_destino, [])
+            if opts_p_dest:
+                puesto_destino_final = st.selectbox("Puesto de Trabajo Destino", opts_p_dest)
+            else:
+                puesto_destino_final = st.text_input("Puesto de Trabajo Destino", placeholder="Ingrese el puesto destino").upper().strip()
 
         with col3:
             cant_repo = st.number_input("Cantidad Reposición (Lote)", min_value=0.0, value=float(pkg_sugerido or 0.0), step=1.0)
@@ -528,8 +531,6 @@ if tab_crear:
 
             unidad = st.selectbox("Unidad Base", ["UN", "M", "L", "KG"])
             dias_prep = st.number_input("Tiempo Preparación / Días Abast.", min_value=0, value=1)
-
-        puesto_destino_final = puesto_dest_manual if puesto_dest_manual else (puesto_dest_sel if puesto_dest_sel != "-- Seleccionar / Nuevo --" else "")
 
         if st.button("💾 Guardar y Crear Kanban", type="primary"):
             df_curr = obtener_base_kanbans()
