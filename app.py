@@ -502,6 +502,8 @@ if tab_crear:
             material = st.text_input("Código de Material (ej. PB005075)", max_chars=12).upper().strip()
             
             pkg_sugerido = dict_pkg.get(material, None)
+            if pkg_sugerido:
+                st.info(f"📦 Lote de Packaging Registrado: **{int(pkg_sugerido)}** unidades.")
             
             tipo_soporte = st.selectbox("Tipo de Kanban", ["GAVETA", "TARJETA"])
             if tipo_soporte == "GAVETA":
@@ -550,6 +552,9 @@ if tab_crear:
             if not material or not puesto_destino_final:
                 st.session_state['msj_creacion'] = ('error', "NO SE PUDO CREAR KANBAN: Código de Material y Puesto Destino son obligatorios.")
                 st.rerun()
+            elif pkg_sugerido is not None and pkg_sugerido > 0 and (float(cant_repo) <= 0 or float(cant_repo) % float(pkg_sugerido) != 0):
+                st.session_state['msj_creacion'] = ('error', f"NO SE PUDO CREAR KANBAN: La Cantidad de Reposición ({cant_repo}) no respeta el Lote de Packaging ({int(pkg_sugerido)} un.). Debe ser múltiplo de {int(pkg_sugerido)}.")
+                st.rerun()
             elif tipo_soporte == "TARJETA" and float(cant_pp) >= float(cant_repo):
                 st.session_state['msj_creacion'] = ('error', f"NO SE PUDO CREAR KANBAN: En Tipo TARJETA, Punto de Pedido ({cant_pp}) debe ser menor a Reposición ({cant_repo}).")
                 st.rerun()
@@ -583,7 +588,7 @@ if tab_crear:
                     'Puesto de trabajo destino': str(puesto_destino_final),
                     'Cantidad Reposicion': cant_repo, 
                     'Unidad Reposicion': str(unidad),
-                    'Cantidad Punto de Pedido': cant_pp, 
+                    'Cantidad Punto de Pedido': cant_pp if tipo_soporte == "TARJETA" else cant_repo, 
                     'Tiempo preparación abast. (en días)': dias_prep,
                     'Fecha Modificación': fecha_actual, 
                     'Usuario Modificación': str(usr_act)
@@ -626,7 +631,7 @@ if tab_mod:
         
         with m_col_left:
             st.subheader("✏️ Modificar Kanban Existente")
-            busqueda = st.text_input("Ingrese Código de Material a Buscar:", key="search_mod", placeholder="ej. CM000115").upper().strip()
+            busqueda = st.text_input("Ingrese Código de Material a Buscar:", key="search_mod", placeholder="ej. CM000042").upper().strip()
             
             if busqueda:
                 kanbans_encontrados = df_live[
@@ -641,71 +646,111 @@ if tab_mod:
                         for _, r in kanbans_encontrados.iterrows()
                     ]
                     
-                    sel_k_fmt = st.selectbox("Seleccione el Código K a modificar:", opciones_k)
+                    sel_k_fmt = st.selectbox("Seleccione el Código K a modificar:", opciones_k, key="sel_k_mod_dropdown")
                     k_sel = sel_k_fmt.split(" | ")[0].strip()
                     row = kanbans_encontrados[kanbans_encontrados['N° Etiquetas'] == k_sel].iloc[0]
                     mat_sel = str(row['Material'])
                     
-                    pkg_ref = dict_pkg.get(mat_sel, int(row['Cantidad Reposicion']) if pd.notna(row['Cantidad Reposicion']) else None)
+                    pkg_ref = dict_pkg.get(mat_sel, None)
                     if pkg_ref:
-                        st.info(f"📦 Lote de Packaging de Referencia: **{pkg_ref}** unidades.")
+                        st.info(f"📦 Lote de Packaging Registrado para {mat_sel}: **{int(pkg_ref)}** unidades.")
                     
                     st.markdown(f"##### **Modificando Kanban:** <span style='color:#10b981; font-weight:bold;'>{k_sel}</span> | **Material:** <span style='color:#3b82f6; font-weight:bold;'>{mat_sel}</span>", unsafe_allow_html=True)
                     st.markdown("<br>", unsafe_allow_html=True)
 
+                    # WIDGETS DINÁMICOS VINCULADOS A k_sel PARA CARGA EXACTA DE TABLA Z
                     m_c1, m_c2, m_c3 = st.columns(3)
                     with m_c1:
-                        m_centro = st.text_input("Centro", value=str(row['Centro'] or "A110"), key="m_centro")
-                        m_tipo_soporte = st.selectbox("Tipo de Kanban", ["GAVETA", "TARJETA"], index=0 if "GAVETA" in str(row['Tipo Kanban']).upper() else 1, key="m_soporte")
+                        m_centro = st.text_input("Centro", value=str(row['Centro'] if pd.notna(row['Centro']) else "A110"), key=f"m_centro_{k_sel}")
                         
+                        tipo_kb_row = str(row['Tipo Kanban']).upper() if pd.notna(row['Tipo Kanban']) else "TARJETA"
+                        idx_soporte = 0 if "GAVETA" in tipo_kb_row else 1
+                        m_tipo_soporte = st.selectbox("Tipo de Kanban", ["GAVETA", "TARJETA"], index=idx_soporte, key=f"m_soporte_{k_sel}")
+                        
+                        medio_row = str(row['Medio']).strip() if pd.notna(row['Medio']) else ""
                         if m_tipo_soporte == "GAVETA":
-                            tamanio_actual = str(row['Medio']).replace("GAVETA", "").strip() if "GAVETA" in str(row['Medio']) else "S"
-                            idx_tam = OPCIONES_GAVETA.index(tamanio_actual) if tamanio_actual in OPCIONES_GAVETA else 0
-                            m_tam_gav = st.selectbox("Tamaño Gaveta", OPCIONES_GAVETA, index=idx_tam, key="m_gav")
+                            tam_ext = medio_row.replace("GAVETA", "").strip()
+                            idx_tam = OPCIONES_GAVETA.index(tam_ext) if tam_ext in OPCIONES_GAVETA else 0
+                            m_tam_gav = st.selectbox("Tamaño Gaveta", OPCIONES_GAVETA, index=idx_tam, key=f"m_gav_{k_sel}")
                             m_medio_str = f"GAVETA {m_tam_gav}"
                         else:
-                            idx_med = OPCIONES_SOPORTE_TARJETA.index(row['Medio']) if row['Medio'] in OPCIONES_SOPORTE_TARJETA else 0
-                            m_medio_str = st.selectbox("Medio Físico", OPCIONES_SOPORTE_TARJETA, index=idx_med, key="m_tarj")
+                            idx_med = OPCIONES_SOPORTE_TARJETA.index(medio_row) if medio_row in OPCIONES_SOPORTE_TARJETA else 0
+                            m_medio_str = st.selectbox("Medio Físico", OPCIONES_SOPORTE_TARJETA, index=idx_med, key=f"m_tarj_{k_sel}")
 
                     with m_c2:
-                        idx_alm_o = LISTA_ALMACENES.index(row['Almacén Origen']) if row['Almacén Origen'] in LISTA_ALMACENES else LISTA_ALMACENES.index("L010")
-                        idx_alm_d = LISTA_ALMACENES.index(row['Almacen Destino']) if row['Almacen Destino'] in LISTA_ALMACENES else LISTA_ALMACENES.index("P140")
+                        alm_o_val = str(row['Almacén Origen']).strip() if pd.notna(row['Almacén Origen']) else "L010"
+                        alm_d_val = str(row['Almacen Destino']).strip() if pd.notna(row['Almacen Destino']) else "P140"
                         
-                        m_almacen_origen = st.selectbox("Almacén Origen", LISTA_ALMACENES, index=idx_alm_o, key="m_alm_o")
-                        m_almacen_destino = st.selectbox("Almacén Destino", LISTA_ALMACENES, index=idx_alm_d, key="m_alm_d")
+                        idx_alm_o = LISTA_ALMACENES.index(alm_o_val) if alm_o_val in LISTA_ALMACENES else LISTA_ALMACENES.index("L010")
+                        idx_alm_d = LISTA_ALMACENES.index(alm_d_val) if alm_d_val in LISTA_ALMACENES else LISTA_ALMACENES.index("P140")
+                        
+                        m_almacen_origen = st.selectbox("Almacén Origen", LISTA_ALMACENES, index=idx_alm_o, key=f"m_alm_o_{k_sel}")
+                        m_almacen_destino = st.selectbox("Almacén Destino", LISTA_ALMACENES, index=idx_alm_d, key=f"m_alm_d_{k_sel}")
                         
                         m_es_interno = (m_almacen_origen != "L010")
+                        p_orig_val = str(row['Puesto trabajo Origen']).strip() if pd.notna(row['Puesto trabajo Origen']) else "-"
+                        
                         if m_es_interno:
-                            opts_p_orig = ALMACENES_PUESTOS.get(m_almacen_origen, [])
-                            m_puesto_origen = st.selectbox("Puesto Origen", opts_p_orig, key="m_p_orig") if opts_p_orig else st.text_input("Puesto Origen", value=str(row['Puesto trabajo Origen'] or ''), key="m_p_orig_txt")
+                            opts_p_orig = ["-- Seleccionar --"] + ALMACENES_PUESTOS.get(m_almacen_origen, [])
+                            idx_p_o = opts_p_orig.index(p_orig_val) if p_orig_val in opts_p_orig else 0
+                            m_puesto_origen_sel = st.selectbox("Puesto Origen", opts_p_orig, index=idx_p_o, key=f"m_p_orig_{k_sel}")
+                            m_puesto_origen = m_puesto_origen_sel if m_puesto_origen_sel != "-- Seleccionar --" else "-"
                         else:
-                            st.text_input("Puesto Origen", value="No aplica (Externo L010)", disabled=True, key="m_p_orig_dis")
+                            st.text_input("Puesto Origen", value="- No aplica (Externo L010) -", disabled=True, key=f"m_p_orig_dis_{k_sel}")
                             m_puesto_origen = "-"
 
-                        m_puesto_destino = st.text_input("Puesto Destino", value=str(row['Puesto de trabajo destino'] or ''), key="m_p_dest").upper().strip()
+                        p_dest_val = str(row['Puesto de trabajo destino']).strip() if pd.notna(row['Puesto de trabajo destino']) else ""
+                        opts_p_dest = ALMACENES_PUESTOS.get(m_almacen_destino, [])
+                        if opts_p_dest:
+                            idx_p_d = opts_p_dest.index(p_dest_val) if p_dest_val in opts_p_dest else 0
+                            m_puesto_destino = st.selectbox("Puesto Destino", opts_p_dest, index=idx_p_d, key=f"m_p_dest_{k_sel}")
+                        else:
+                            m_puesto_destino = st.text_input("Puesto Destino", value=p_dest_val, key=f"m_p_dest_txt_{k_sel}").upper().strip()
 
                     with m_c3:
-                        m_cant_repo = st.number_input("Cantidad Reposición", min_value=0.0, value=float(row['Cantidad Reposicion'] or 0.0), key="m_cant_r")
+                        try:
+                            val_repo_init = float(row['Cantidad Reposicion'])
+                        except (ValueError, TypeError):
+                            val_repo_init = float(pkg_ref or 0.0)
+                            
+                        m_cant_repo = st.number_input("Cantidad Reposición", min_value=0.0, value=val_repo_init, step=1.0, key=f"m_cant_r_{k_sel}")
                         
                         if m_tipo_soporte == "GAVETA":
-                            m_cant_pp = st.number_input("Cantidad Punto Pedido", value=m_cant_repo, disabled=True, key="m_cant_p_g")
+                            m_cant_pp = st.number_input("Cantidad Punto Pedido", value=m_cant_repo, disabled=True, key=f"m_cant_p_g_{k_sel}")
                         else:
-                            m_cant_pp = st.number_input("Cantidad Punto Pedido", min_value=0.0, value=float(row['Cantidad Punto de Pedido'] or 0.0), key="m_cant_p_t")
+                            try:
+                                val_pp_init = float(row['Cantidad Punto de Pedido'])
+                            except (ValueError, TypeError):
+                                val_pp_init = 0.0
+                            m_cant_pp = st.number_input("Cantidad Punto Pedido", min_value=0.0, value=val_pp_init, step=1.0, key=f"m_cant_p_t_{k_sel}")
 
                         unidades_lista = ["UN", "M", "L", "KG"]
-                        idx_un = unidades_lista.index(row['Unidad Reposicion']) if row['Unidad Reposicion'] in unidades_lista else 0
-                        m_unidad = st.selectbox("Unidad Base", unidades_lista, index=idx_un, key="m_un")
+                        un_val = str(row['Unidad Reposicion']).strip() if pd.notna(row['Unidad Reposicion']) else "UN"
+                        idx_un = unidades_lista.index(un_val) if un_val in unidades_lista else 0
+                        m_unidad = st.selectbox("Unidad Base", unidades_lista, index=idx_un, key=f"m_un_{k_sel}")
                         
-                        m_dias = st.number_input("Días Abastecimiento", min_value=0, value=int(row['Tiempo preparación abast. (en días)'] or 1), key="m_dias")
+                        try:
+                            val_dias_init = int(row['Tiempo preparación abast. (en días)'])
+                        except (ValueError, TypeError):
+                            val_dias_init = 1
+                        m_dias = st.number_input("Días Abastecimiento", min_value=0, value=val_dias_init, key=f"m_dias_{k_sel}")
 
                     st.markdown("<br>", unsafe_allow_html=True)
-                    if st.button("💾 Guardar Cambios del Kanban", type="primary"):
-                        if m_tipo_soporte == "TARJETA" and float(m_cant_pp) >= float(m_cant_repo):
+                    if st.button("💾 Guardar Cambios del Kanban", type="primary", key=f"btn_save_{k_sel}"):
+                        if not m_puesto_destino:
+                            st.session_state['msj_mod'] = ('error', "NO SE PUDO MODIFICAR: El Puesto Destino es obligatorio.")
+                            st.rerun()
+                        elif pkg_ref is not None and pkg_ref > 0 and (float(m_cant_repo) <= 0 or float(m_cant_repo) % float(pkg_ref) != 0):
+                            st.session_state['msj_mod'] = ('error', f"NO SE PUDO MODIFICAR: La Cantidad de Reposición ({m_cant_repo}) no respeta el Lote de Packaging ({int(pkg_ref)} un.). Debe ser múltiplo de {int(pkg_ref)}.")
+                            st.rerun()
+                        elif m_tipo_soporte == "TARJETA" and float(m_cant_pp) >= float(m_cant_repo):
                             st.session_state['msj_mod'] = ('error', f"NO SE PUDO MODIFICAR: En Tipo TARJETA, Punto de Pedido ({m_cant_pp}) debe ser menor a Reposición ({m_cant_repo}).")
                             st.rerun()
                         else:
                             usr_act = st.session_state['usuario_email']
                             idx = df_live[df_live['N° Etiquetas'] == k_sel].index[0]
+                            
+                            cant_pp_final = m_cant_repo if m_tipo_soporte == "GAVETA" else m_cant_pp
                             
                             df_live.loc[idx, 'Centro'] = m_centro
                             df_live.loc[idx, 'Tipo Kanban'] = m_tipo_soporte
@@ -715,7 +760,7 @@ if tab_mod:
                             df_live.loc[idx, 'Puesto trabajo Origen'] = m_puesto_origen
                             df_live.loc[idx, 'Puesto de trabajo destino'] = m_puesto_destino
                             df_live.loc[idx, 'Cantidad Reposicion'] = m_cant_repo
-                            df_live.loc[idx, 'Cantidad Punto de Pedido'] = m_cant_pp
+                            df_live.loc[idx, 'Cantidad Punto de Pedido'] = cant_pp_final
                             df_live.loc[idx, 'Unidad Reposicion'] = m_unidad
                             df_live.loc[idx, 'Tiempo preparación abast. (en días)'] = m_dias
                             df_live.loc[idx, 'Fecha Modificación'] = obtener_fecha_hora_arg()
