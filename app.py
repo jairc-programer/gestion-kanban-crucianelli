@@ -283,8 +283,8 @@ def cargar_base_desde_disco():
             return pd.DataFrame(columns=COLUMNS)
     return pd.DataFrame(columns=COLUMNS)
 
-def obtener_base_kanbans():
-    if 'df_kanbans_global' not in st.session_state:
+def obtener_base_kanbans(force_reload=False):
+    if force_reload or 'df_kanbans_global' not in st.session_state:
         st.session_state['df_kanbans_global'] = cargar_base_desde_disco()
     return st.session_state['df_kanbans_global']
 
@@ -413,7 +413,7 @@ dict_pkg = cargar_packaging()
 rol_actual = st.session_state.get('usuario_rol', 'Consulta')
 
 # ==========================================
-# CABECERA Y ROL
+# CABECERA Y ROL CON BOTÓN DE ACTUALIZACIÓN
 # ==========================================
 st.markdown(f"""
 <div class="header-box">
@@ -430,7 +430,13 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-col_head_space, col_logout = st.columns([5, 1])
+col_head_space, col_refresh, col_logout = st.columns([3.8, 1.2, 1])
+with col_refresh:
+    if st.button("🔄 Actualizar Datos", use_container_width=True, help="Releer y actualizar datos desde TablaZ.xlsx"):
+        st.session_state.pop('df_kanbans_global', None)
+        st.toast("🔄 Datos sincronizados correctamente desde TablaZ.xlsx")
+        st.rerun()
+
 with col_logout:
     if st.button("Cerrar Sesión", use_container_width=True):
         st.session_state['usuario_email'] = None
@@ -455,11 +461,11 @@ st.markdown("<br>", unsafe_allow_html=True)
 # MENÚ POR PERFILES Y NAVEGACIÓN
 # ==========================================
 if rol_actual == "Procesos":
-    lista_tabs = ["➕ Crear Nuevo Kanban", "✏️ Modificar y Eliminar", "📈 Panel KPIs & Métricas", "🚚 Tracker de Ejecución Logística", "📊 Exportar Datos", "📜 Historial Auditoría", "👤 Mi Perfil"]
+    lista_tabs = ["➕ Crear Nuevo Kanban", "✏️ Modificar y Eliminar", "📈 Panel KPIs & Métricas", "🚚 Tracker de Ejecución Logística", "📊 Extraer Datos de TablaZ", "📜 Historial Auditoría", "👤 Mi Perfil"]
 elif rol_actual == "Logistica":
-    lista_tabs = ["🚚 Tracker de Ejecución Logística", "📈 Panel KPIs & Métricas", "📋 Consulta General", "📊 Exportar Datos para SAP", "📜 Historial Auditoría", "👤 Mi Perfil"]
+    lista_tabs = ["🚚 Tracker de Ejecución Logística", "📈 Panel KPIs & Métricas", "📋 Consulta General", "📊 Extraer Datos de TablaZ", "📜 Historial Auditoría", "👤 Mi Perfil"]
 else:
-    lista_tabs = ["📈 Panel KPIs & Métricas", "📋 Consulta General", "🚚 Estado de Solicitudes", "👤 Mi Perfil"]
+    lista_tabs = ["📈 Panel KPIs & Métricas", "📋 Consulta General", "📊 Extraer Datos de TablaZ", "🚚 Estado de Solicitudes", "👤 Mi Perfil"]
 
 tabs = st.tabs(lista_tabs)
 
@@ -469,14 +475,13 @@ def obtener_tab(nombre):
     return None
 
 # ==========================================
-# VISTA: CREAR KANBAN (PANTALLA EXACTA IMAGEN 1)
+# VISTA: CREAR KANBAN
 # ==========================================
 tab_crear = obtener_tab("➕ Crear Nuevo Kanban")
 if tab_crear:
     with tab_crear:
         st.subheader("Alta de Nuevo Kanban")
         
-        # Banner azul informativo de código K asignado automáticamente
         st.info(f"Próximo Código K asignado automáticamente: **{proximo_k_val}**")
         
         col1, col2, col3 = st.columns(3)
@@ -524,7 +529,6 @@ if tab_crear:
             unidad = st.selectbox("Unidad Base", ["UN", "M", "L", "KG"])
             dias_prep = st.number_input("Tiempo Preparación / Días Abast.", min_value=0, value=1)
 
-        # Determinar puesto destino definitivo
         puesto_destino_final = puesto_dest_manual if puesto_dest_manual else (puesto_dest_sel if puesto_dest_sel != "-- Seleccionar / Nuevo --" else "")
 
         if st.button("💾 Guardar y Crear Kanban", type="primary"):
@@ -578,7 +582,7 @@ if tab_crear:
                 st.rerun()
 
 # ==========================================
-# VISTA: MODIFICAR Y ELIMINAR (PANTALLA EXACTA IMAGEN 2)
+# VISTA: MODIFICAR Y ELIMINAR
 # ==========================================
 tab_mod = obtener_tab("✏️ Modificar y Eliminar")
 if tab_mod:
@@ -587,7 +591,6 @@ if tab_mod:
         
         m_col_left, m_col_right = st.columns([2, 1])
         
-        # --- COLUMNA IZQUIERDA: MODIFICAR KANBAN EXISTENTE ---
         with m_col_left:
             st.subheader("✏️ Modificar Kanban Existente")
             busqueda = st.text_input("Ingrese Código de Material a Buscar:", key="search_mod", placeholder="ej. CM000115").upper().strip()
@@ -610,12 +613,10 @@ if tab_mod:
                     row = kanbans_encontrados[kanbans_encontrados['N° Etiquetas'] == k_sel].iloc[0]
                     mat_sel = str(row['Material'])
                     
-                    # Cartel azul de packaging de referencia
                     pkg_ref = dict_pkg.get(mat_sel, int(row['Cantidad Reposicion']) if pd.notna(row['Cantidad Reposicion']) else None)
                     if pkg_ref:
                         st.info(f"📦 Lote de Packaging de Referencia: **{pkg_ref}** unidades.")
                     
-                    # Encabezado con resaltado de Kanban y Material
                     st.markdown(f"##### **Modificando Kanban:** <span style='color:#10b981; font-weight:bold;'>{k_sel}</span> | **Material:** <span style='color:#3b82f6; font-weight:bold;'>{mat_sel}</span>", unsafe_allow_html=True)
                     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -667,7 +668,7 @@ if tab_mod:
                     st.markdown("<br>", unsafe_allow_html=True)
                     if st.button("💾 Guardar Cambios del Kanban", type="primary"):
                         if m_tipo_soporte == "TARJETA" and float(m_cant_pp) >= float(m_cant_repo):
-                            st.error(f"🚫 ACCIÓN BLOQUEADA: En Kanbans TARJETA, Punto de Pedido ({m_cant_pp}) debe ser estrictamente menor a Reposición ({m_cant_repo}).")
+                            st.error(f"🚫 ACCIÓN BLOQUEADA: En Kanbans TARJETA, Punto de Pedido ({m_cant_pp}) debe ser strictly menor a Reposición ({m_cant_repo}).")
                         else:
                             usr_act = st.session_state['usuario_email']
                             idx = df_live[df_live['N° Etiquetas'] == k_sel].index[0]
@@ -696,7 +697,6 @@ if tab_mod:
             else:
                 st.info("👆 Ingrese un código de material o número K arriba para buscar y editar.")
 
-        # --- COLUMNA DERECHA: ELIMINAR KANBAN ---
         with m_col_right:
             st.subheader("🗑️ Eliminar Kanban")
             
@@ -858,10 +858,10 @@ if tab_consulta:
         st.subheader("📋 Consulta General de Kanbans (En Vivo)")
         st.dataframe(obtener_base_kanbans(), use_container_width=True)
 
-tab_export = obtener_tab("📊 Exportar Datos") or obtener_tab("📊 Exportar Datos para SAP")
+tab_export = obtener_tab("📊 Extraer Datos de TablaZ")
 if tab_export:
     with tab_export:
-        st.subheader("📊 Exportar Tabla Z Completa para SAP")
+        st.subheader("📊 Extraer Datos de TablaZ (Sincronizado con Excel)")
         df_export_live = obtener_base_kanbans()
         st.dataframe(df_export_live, use_container_width=True)
         
