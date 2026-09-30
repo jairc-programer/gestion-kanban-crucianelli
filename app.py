@@ -604,6 +604,22 @@ if tab_crear:
 tab_mod = obtener_tab("✏️ Modificar y Eliminar")
 if tab_mod:
     with tab_mod:
+        # BANNER DE CONFIRMACIÓN RESULTADO DE MODIFICACIÓN / ELIMINACIÓN
+        if 'msj_mod' in st.session_state:
+            tipo_msj, texto_msj = st.session_state.pop('msj_mod')
+            if tipo_msj == 'success':
+                st.markdown(f"""
+                <div style="background-color: rgba(16, 185, 129, 0.2); border: 2px solid #10b981; padding: 14px; border-radius: 10px; color: #34d399; font-size: 1.15rem; font-weight: bold; text-align: center; margin-bottom: 20px;">
+                    ✅ {texto_msj}
+                </div>
+                """, unsafe_allow_html=True)
+            elif tipo_msj == 'error':
+                st.markdown(f"""
+                <div style="background-color: rgba(239, 68, 68, 0.2); border: 2px solid #ef4444; padding: 14px; border-radius: 10px; color: #f87171; font-size: 1.15rem; font-weight: bold; text-align: center; margin-bottom: 20px;">
+                    ❌ {texto_msj}
+                </div>
+                """, unsafe_allow_html=True)
+
         df_live = obtener_base_kanbans()
         
         m_col_left, m_col_right = st.columns([2, 1])
@@ -685,7 +701,8 @@ if tab_mod:
                     st.markdown("<br>", unsafe_allow_html=True)
                     if st.button("💾 Guardar Cambios del Kanban", type="primary"):
                         if m_tipo_soporte == "TARJETA" and float(m_cant_pp) >= float(m_cant_repo):
-                            st.error(f"🚫 ACCIÓN BLOQUEADA: En Kanbans TARJETA, Punto de Pedido ({m_cant_pp}) debe ser menor a Reposición ({m_cant_repo}).")
+                            st.session_state['msj_mod'] = ('error', f"NO SE PUDO MODIFICAR: En Tipo TARJETA, Punto de Pedido ({m_cant_pp}) debe ser menor a Reposición ({m_cant_repo}).")
+                            st.rerun()
                         else:
                             usr_act = st.session_state['usuario_email']
                             idx = df_live[df_live['N° Etiquetas'] == k_sel].index[0]
@@ -707,7 +724,8 @@ if tab_mod:
                             actualizar_base_kanbans(df_live)
                             registrar_log("ACTUALIZO", k_sel, mat_sel, m_medio_str, m_almacen_destino, m_puesto_destino, usr_act)
                             crear_solicitud_tracker(mat_sel, k_sel, df_live.loc[idx, 'Tipo Etiqueta'], m_puesto_destino, m_medio_str, "ACTUALIZACIÓN", "IMPRIMIR / REEMPLAZAR", usr_act)
-                            st.success(f"✅ ¡Kanban **{k_sel}** actualizado con éxito!")
+                            
+                            st.session_state['msj_mod'] = ('success', f"CÓDIGO {k_sel} MODIFICADO CON EXITO")
                             st.rerun()
                 else:
                     st.warning(f"⚠️ No se encontraron Kanbans activos para el criterio: **{busqueda}**")
@@ -744,7 +762,8 @@ if tab_mod:
                 
                 registrar_log("ELIMINO", k_del_sel, mat_del, medio_del, str(row_del['Almacen Destino']), puesto_del, usr_act)
                 crear_solicitud_tracker(mat_del, k_del_sel, tipo_del, puesto_del, medio_del, "BAJA / ELIMINACIÓN", "RETIRAR KB", usr_act)
-                st.success(f"♻️ Kanban **{k_del_sel}** eliminado. El código K quedó liberado para ser reciclado.")
+                
+                st.session_state['msj_mod'] = ('success', f"CÓDIGO {k_del_sel} ELIMINADO DE TABLA Z")
                 st.rerun()
 
 # ==========================================
@@ -901,7 +920,6 @@ if tab_historial:
         st.subheader("📜 Historial Completo de Modificaciones")
         st.dataframe(cargar_logs().sort_values(by="Fecha_Hora", ascending=False), use_container_width=True)
         
-        # RESTRICCIÓN EXCLUSIVA PARA ADMINISTRADOR (jairc@crucianelli.com)
         if st.session_state.get('usuario_email') == "jairc@crucianelli.com":
             st.markdown("---")
             with st.expander("🔒 Zona Exclusiva Administrador - Puesta a Cero (Jair)"):
