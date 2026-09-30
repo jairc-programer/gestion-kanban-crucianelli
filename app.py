@@ -101,8 +101,9 @@ ARG_TZ = pytz.timezone('America/Argentina/Buenos_Aires')
 def obtener_fecha_hora_arg():
     return datetime.now(ARG_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
-DB_FILE = "TablaZ.xlsx"
-LIVE_DB_FILE = "TablaZ_live.csv"
+# MEJORA 1: Persistencia ultrarrápida usando formato .parquet
+DB_FILE = "TablaZ.parquet"
+LIVE_DB_FILE = "TablaZ_live.parquet"
 PKG_FILE_EXCEL = "Lotes packaing.xlsx"
 PKG_FILE_ALT = "Lote packaging.xlsx"
 PKG_FILE_ALT2 = "Lotes packaging.xlsx"
@@ -271,24 +272,29 @@ if not st.session_state['usuario_email']:
     st.stop()
 
 # ==========================================
-# MANEJO CENTRALIZADO CON PERSISTENCIA VIVA
+# MANEJO CENTRALIZADO CON PERSISTENCIA PARQUET
 # ==========================================
 def cargar_base_desde_disco():
-    if os.path.exists(LIVE_DB_FILE):
-        try:
-            df = pd.read_csv(LIVE_DB_FILE, dtype=str)
-            for col in COLUMNS:
-                if col not in df.columns:
-                    df[col] = None
-            df['Material'] = df['Material'].fillna('').astype(str).str.strip().str.upper()
-            df['N° Etiquetas'] = df['N° Etiquetas'].fillna('').astype(str).str.strip().str.upper()
-            return df[COLUMNS].reset_index(drop=True)
-        except Exception:
-            pass
+    # 1. Intentar cargar desde los archivos Parquet
+    for p_file in [LIVE_DB_FILE, DB_FILE]:
+        if os.path.exists(p_file):
+            try:
+                df = pd.read_parquet(p_file)
+                df = df.astype(str)
+                for col in COLUMNS:
+                    if col not in df.columns:
+                        df[col] = None
+                df['Material'] = df['Material'].fillna('').astype(str).str.strip().str.upper()
+                df['N° Etiquetas'] = df['N° Etiquetas'].fillna('').astype(str).str.strip().str.upper()
+                return df[COLUMNS].reset_index(drop=True)
+            except Exception:
+                pass
 
-    if os.path.exists(DB_FILE):
+    # 2. Fallback a Excel legacy si existe la migración previa
+    excel_legacy = "TablaZ.xlsx"
+    if os.path.exists(excel_legacy):
         try:
-            df = pd.read_excel(DB_FILE, sheet_name=SHEET_NAME, dtype=str)
+            df = pd.read_excel(excel_legacy, sheet_name=SHEET_NAME, dtype=str)
             for col in COLUMNS:
                 if col not in df.columns:
                     df[col] = None
@@ -307,7 +313,8 @@ def cargar_base_desde_disco():
                 return "TARJETA"
             df['Tipo Kanban'] = df.apply(determinar_tipo_kanban, axis=1)
             df = df[COLUMNS].reset_index(drop=True)
-            df.to_csv(LIVE_DB_FILE, index=False)
+            df.to_parquet(LIVE_DB_FILE, index=False)
+            df.to_parquet(DB_FILE, index=False)
             return df
         except Exception:
             return pd.DataFrame(columns=COLUMNS)
@@ -323,15 +330,10 @@ def actualizar_base_kanbans(nuevo_df):
     st.session_state['df_kanbans_global'] = df_limpio
     
     try:
-        df_limpio.to_csv(LIVE_DB_FILE, index=False)
+        df_limpio.to_parquet(LIVE_DB_FILE, index=False)
+        df_limpio.to_parquet(DB_FILE, index=False)
     except Exception as e:
-        st.error(f"⚠️ Error en persistencia CSV viva: {e}")
-
-    try:
-        with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:
-            df_limpio.to_excel(writer, sheet_name=SHEET_NAME, index=False)
-    except Exception:
-        pass
+        st.error(f"⚠️ Error en persistencia Parquet: {e}")
 
 def cargar_packaging():
     target_file = None
@@ -356,7 +358,6 @@ def cargar_packaging():
                 for c_med in ['Packaging', 'Packaing', 'Medio', 'Soporte', 'Envase']:
                     if c_med in df.columns and pd.notna(r[c_med]):
                         try:
-                            # Si la columna tiene número de lote de packaging
                             val_num = float(r[c_med])
                             if not pd.isna(val_num) and val_num > 0:
                                 pass
@@ -391,6 +392,7 @@ def cargar_packaging():
             return {}
     return {}
 
+# MEJORA 4: Normalización completa de acciones en historial de auditoría
 def cargar_logs():
     if os.path.exists(LOG_FILE):
         try:
@@ -398,12 +400,18 @@ def cargar_logs():
             for col in LOG_COLUMNS:
                 if col not in df_logs.columns:
                     df_logs[col] = "-"
-            mapeo_acciones = {
-                'CREAR': 'CREACIÓN', 'CREO': 'CREACIÓN', 'CREACION': 'CREACIÓN',
-                'MODIFICAR': 'MODIFICACIÓN', 'ACTUALIZO': 'MODIFICACIÓN', 'MODIFICACION': 'MODIFICACIÓN',
-                'ELIMINAR': 'ELIMINACIÓN', 'ELIMINO': 'ELIMINACIÓN', 'ELIMINACION': 'ELIMINACIÓN'
-            }
-            df_logs['Acción'] = df_logs['Acción'].astype(str).str.upper().map(lambda x: mapeo_acciones.get(x, x))
+            
+            def normalizar_accion(val):
+                val_clean = str(val).strip().upper()
+                if any(k in val_clean for k in ['CREA', 'ALTA', 'NUEVO', 'CREAR']):
+                    return 'CREACIÓN'
+                elif any(k in val_clean for k in ['MODIF', 'ACTUALIZ', 'EDITAR', 'CAMBIO']):
+                    return 'MODIFICACIÓN'
+                elif any(k in val_clean for k in ['ELIMIN', 'BAJA', 'BORRAR']):
+                    return 'ELIMINACIÓN'
+                return val_clean
+
+            df_logs['Acción'] = df_logs['Acción'].apply(normalizar_accion)
             return df_logs[LOG_COLUMNS].fillna("-")
         except Exception:
             return pd.DataFrame(columns=LOG_COLUMNS)
@@ -862,7 +870,6 @@ if tab_crear:
         df_live_c = obtener_base_kanbans()
         proximo_k_def = obtener_siguiente_codigo_k(df_live_c)
         
-        # --- REGLA: Selección/Ingreso del Material ---
         material_in_raw = st.text_input("Material / Código SAP:", placeholder="Ej: CM000016", key="c_mat_input").strip().upper()
         
         info_pkg = dict_pkg.get(material_in_raw, {})
@@ -875,14 +882,12 @@ if tab_crear:
         elif material_in_raw != "":
             st.caption("⚠️ Material no registrado en la planilla 'Lote packaging'. Se asume valor mínimo predeterminado 1.0.")
 
-        # --- REGLA 1: Precarga por Defecto (CENTRO A110, ALMACÉN ORIGEN L010) ---
         c_reglas1, c_reglas2 = st.columns(2)
         with c_reglas1:
             idx_alm_def = LISTA_ALMACENES.index("L010") if "L010" in LISTA_ALMACENES else 0
             alm_origen_in = st.selectbox("Almacén Origen:", LISTA_ALMACENES, index=idx_alm_def, key="c_alm_o_input")
         
         with c_reglas2:
-            # --- REGLA 2: Si Almacén Origen es L010, PROHIBIDO KI, ÚNICAMENTE KE ---
             if alm_origen_in == "L010":
                 opts_tipo_etq_crear = ["KE"]
                 st.caption("🔒 Almacén Origen es L010: Tipo de Etiqueta prohibido 'KI', únicamente 'KE'.")
@@ -891,9 +896,9 @@ if tab_crear:
                 
             tipo_etiqueta_in = st.selectbox("Tipo Etiqueta:", opts_tipo_etq_crear, index=0, key="c_tipo_etq_input")
 
-        # --- REGLA 2 (Puesto de Trabajo Origen para L010 siempre PRINCIPAL) ---
-        puestos_origen_disp = ALMACENES_PUESTOS.get(alm_origen_in, [])
-        if alm_origen_in == "L010":
+        # MEJORA 2: Puesto de trabajo origen dinámico según el Almacén Origen seleccionado
+        puestos_origen_disp = ALMACENES_PUESTOS.get(alm_origen_in, ["PRINCIPAL"])
+        if not puestos_origen_disp:
             puestos_origen_disp = ["PRINCIPAL"]
 
         with st.form("form_crear_kanban", clear_on_submit=False):
@@ -908,14 +913,18 @@ if tab_crear:
                 
                 tipo_kanban_in = st.selectbox("Tipo Kanban:", ["TARJETA", "GAVETA"])
                 
+                # MEJORA 3: Incluir opción 'SIN MEDIO DEFINIDO' en la selección de GAVETA
                 if tipo_kanban_in == "TARJETA":
                     idx_m = OPCIONES_SOPORTE_TARJETA.index(medio_pkg_sug) if medio_pkg_sug in OPCIONES_SOPORTE_TARJETA else 0
                     medio_in = st.selectbox("Medio / Soporte Tarjeta:", OPCIONES_SOPORTE_TARJETA, index=idx_m)
                 else:
-                    gaveta_sel = st.selectbox("Tamaño Gaveta:", OPCIONES_GAVETA)
-                    medio_in = f"GAVETA {gaveta_sel}"
+                    opts_gaveta_full = OPCIONES_GAVETA + ["SIN MEDIO DEFINIDO"]
+                    gaveta_sel = st.selectbox("Tamaño / Medio Gaveta:", opts_gaveta_full)
+                    if gaveta_sel == "SIN MEDIO DEFINIDO":
+                        medio_in = "SIN MEDIO DEFINIDO"
+                    else:
+                        medio_in = f"GAVETA {gaveta_sel}"
                     
-                # Precarga "A110" para CENTRO
                 centro_in = st.text_input("Centro:", value="A110").strip().upper()
 
             with c_sec2:
@@ -927,7 +936,6 @@ if tab_crear:
                 puestos_dest_disp = ALMACENES_PUESTOS.get(alm_destino_in, [])
                 puesto_destino_in = st.selectbox("Puesto Trabajo Destino:", puestos_dest_disp if puestos_dest_disp else ["N/A"])
                 
-                # --- REGLA 3: Lote propuesto mínimo ---
                 val_min_repo = float(lote_min_pkg) if (lote_min_pkg is not None and lote_min_pkg > 0) else 1.0
                 
                 c_q1, c_q2 = st.columns(2)
@@ -943,13 +951,11 @@ if tab_crear:
             btn_crear = st.form_submit_button("🚀 Registrar Kanban", type="primary", use_container_width=True)
 
         if btn_crear:
-            # Validaciones de reglas de negocio
             if not material_in_raw or not codigo_k_in:
                 st.error("❌ Los campos 'Material' y 'N° Etiquetas' son obligatorios.")
             elif alm_origen_in == "L010" and tipo_etiqueta_in != "KE":
                 st.error("❌ Queda prohibido usar 'KI' cuando el Almacén Origen es 'L010'. Únicamente se permite 'KE'.")
             elif lote_min_pkg is not None and (round(cant_repo_in, 4) % round(lote_min_pkg, 4) != 0):
-                # Validar múltiplo exacto del lote de packaging
                 st.error(f"❌ La Cantidad de Reposición ({cant_repo_in}) debe ser un MÚLTIPLO EXACTO del lote de packaging propuesto ({lote_min_pkg}). Ejemplo: {lote_min_pkg}, {lote_min_pkg*2}, {lote_min_pkg*3}...")
             else:
                 df_verif = obtener_base_kanbans()
@@ -1030,7 +1036,7 @@ if tab_mod_elim:
                 k_seleccionado = st.selectbox("Seleccionar Código K a Modificar / Eliminar:", sorted(lista_k_mod))
                 row_sel = df_mod[df_mod['N° Etiquetas'] == k_seleccionado].iloc[0]
                 
-                subtab_mod, subtab_elim = st.tabs(["✏️ Modificar Registro", "🗑️ Eliminar Registro"])
+                subtab_mod, subtab_elim = st.tabs(["✏️ Modificar Registro", "🗑️️ Eliminar Registro"])
                 
                 with subtab_mod:
                     mod_material_init = str(row_sel['Material']) if pd.notna(row_sel['Material']) else ""
@@ -1061,8 +1067,9 @@ if tab_mod_elim:
                         idx_etq = opts_tipo_etq_mod.index(etq_init)
                         mod_tipo_etq = st.selectbox("Tipo Etiqueta:", opts_tipo_etq_mod, index=idx_etq, key=f"m_etq_{k_seleccionado}")
 
-                    puestos_o_disp_mod = ALMACENES_PUESTOS.get(mod_alm_orig, [])
-                    if mod_alm_orig == "L010":
+                    # MEJORA 2: Puesto de trabajo origen dinámico en pestaña de edición
+                    puestos_o_disp_mod = ALMACENES_PUESTOS.get(mod_alm_orig, ["PRINCIPAL"])
+                    if not puestos_o_disp_mod:
                         puestos_o_disp_mod = ["PRINCIPAL"]
 
                     with st.form(f"form_mod_{k_seleccionado}"):
@@ -1178,7 +1185,7 @@ if tab_mod_elim:
                             st.rerun()
 
                 with subtab_elim:
-                    st.warning(f"⚠️️ ¿Está seguro que desea eliminar el Kanban **{k_seleccionado}** (Material: {row_sel['Material']})?")
+                    st.warning(f"⚠ ¿Está seguro que desea eliminar el Kanban **{k_seleccionado}** (Material: {row_sel['Material']})?")
                     
                     with st.form(f"form_elim_{k_seleccionado}"):
                         motivo_elim = st.text_input("Motivo de la eliminación:", placeholder="Ej: Obsoleto, Duplicado, Baja de Puesto").strip()
@@ -1344,7 +1351,7 @@ if tab_perfil:
                     else:
                         st.error("❌ Las nuevas contraseñas no coinciden o están vacías.")
                 else:
-                    st.error("❌ La contraseña actual es incorrecta.")
+                    st.error("❌ La contraseña actual me es incorrecta.")
 
         if rol_actual_val == "Procesos":
             st.markdown("---")
@@ -1366,7 +1373,7 @@ if tab_perfil:
                     guardar_usuarios(USUARIOS_REGISTRADOS)
                     
                     if usr_sel == user_actual:
-                        st.session_state['usuario_rol'] = nuevo_rol_sel
+                        st.session_state['usuario_role'] = nuevo_rol_sel
                         
                     st.success(f"✅ ¡Rol de {usr_sel} actualizado correctamente a '{nuevo_rol_sel}'!")
                     st.rerun()
