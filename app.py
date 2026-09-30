@@ -101,7 +101,6 @@ ARG_TZ = pytz.timezone('America/Argentina/Buenos_Aires')
 def obtener_fecha_hora_arg():
     return datetime.now(ARG_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
-# MEJORA 1: Persistencia ultrarrápida usando formato .parquet
 DB_FILE = "TablaZ.parquet"
 LIVE_DB_FILE = "TablaZ_live.parquet"
 PKG_FILE_EXCEL = "Lotes packaing.xlsx"
@@ -275,7 +274,6 @@ if not st.session_state['usuario_email']:
 # MANEJO CENTRALIZADO CON PERSISTENCIA PARQUET
 # ==========================================
 def cargar_base_desde_disco():
-    # 1. Intentar cargar desde los archivos Parquet
     for p_file in [LIVE_DB_FILE, DB_FILE]:
         if os.path.exists(p_file):
             try:
@@ -290,7 +288,6 @@ def cargar_base_desde_disco():
             except Exception:
                 pass
 
-    # 2. Fallback a Excel legacy si existe la migración previa
     excel_legacy = "TablaZ.xlsx"
     if os.path.exists(excel_legacy):
         try:
@@ -392,7 +389,6 @@ def cargar_packaging():
             return {}
     return {}
 
-# MEJORA 4: Normalización completa de acciones en historial de auditoría
 def cargar_logs():
     if os.path.exists(LOG_FILE):
         try:
@@ -896,10 +892,12 @@ if tab_crear:
                 
             tipo_etiqueta_in = st.selectbox("Tipo Etiqueta:", opts_tipo_etq_crear, index=0, key="c_tipo_etq_input")
 
-        # MEJORA 2: Puesto de trabajo origen dinámico según el Almacén Origen seleccionado
         puestos_origen_disp = ALMACENES_PUESTOS.get(alm_origen_in, ["PRINCIPAL"])
         if not puestos_origen_disp:
             puestos_origen_disp = ["PRINCIPAL"]
+
+        # SELECCIÓN DINÁMICA DE TIPO DE KANBAN FUERA DEL FORMULARIO PARA ACTUALIZAR MEDIOS INMEDIATAMENTE
+        tipo_kanban_in = st.selectbox("Tipo Kanban:", ["TARJETA", "GAVETA"], key="c_tipo_kanban_select")
 
         with st.form("form_crear_kanban", clear_on_submit=False):
             c_sec1, c_sec2 = st.columns(2)
@@ -910,10 +908,8 @@ if tab_crear:
                 codigo_k_in = st.text_input("N° Etiquetas / Código K:", value=proximo_k_def, help="Autogenerado con el próximo código libre en la secuencia K").strip().upper()
                 st.text_input("Material Confirmado:", value=material_in_raw, disabled=True)
                 st.text_input("Tipo Etiqueta Confirmado:", value=tipo_etiqueta_in, disabled=True)
+                st.text_input("Tipo Kanban Seleccionado:", value=tipo_kanban_in, disabled=True)
                 
-                tipo_kanban_in = st.selectbox("Tipo Kanban:", ["TARJETA", "GAVETA"])
-                
-                # MEJORA 3: Incluir opción 'SIN MEDIO DEFINIDO' en la selección de GAVETA
                 if tipo_kanban_in == "TARJETA":
                     idx_m = OPCIONES_SOPORTE_TARJETA.index(medio_pkg_sug) if medio_pkg_sug in OPCIONES_SOPORTE_TARJETA else 0
                     medio_in = st.selectbox("Medio / Soporte Tarjeta:", OPCIONES_SOPORTE_TARJETA, index=idx_m)
@@ -951,12 +947,18 @@ if tab_crear:
             btn_crear = st.form_submit_button("🚀 Registrar Kanban", type="primary", use_container_width=True)
 
         if btn_crear:
+            base_lote_chk = lote_min_pkg if lote_min_pkg is not None else 1.0
+            es_multiplo_repo = (round(cant_repo_in, 4) % round(base_lote_chk, 4) == 0)
+            es_multiplo_pp = (round(cant_pp_in, 4) % round(base_lote_chk, 4) == 0)
+
             if not material_in_raw or not codigo_k_in:
                 st.error("❌ Los campos 'Material' y 'N° Etiquetas' son obligatorios.")
             elif alm_origen_in == "L010" and tipo_etiqueta_in != "KE":
                 st.error("❌ Queda prohibido usar 'KI' cuando el Almacén Origen es 'L010'. Únicamente se permite 'KE'.")
-            elif lote_min_pkg is not None and (round(cant_repo_in, 4) % round(lote_min_pkg, 4) != 0):
-                st.error(f"❌ La Cantidad de Reposición ({cant_repo_in}) debe ser un MÚLTIPLO EXACTO del lote de packaging propuesto ({lote_min_pkg}). Ejemplo: {lote_min_pkg}, {lote_min_pkg*2}, {lote_min_pkg*3}...")
+            elif not es_multiplo_repo:
+                st.error(f"❌ La Cantidad de Reposición ({cant_repo_in}) debe ser un MÚLTIPLO EXACTO del lote propuesto ({base_lote_chk}). Ejemplo: {base_lote_chk}, {base_lote_chk*2}, {base_lote_chk*3}...")
+            elif not es_multiplo_pp:
+                st.error(f"❌ La Cantidad Punto de Pedido ({cant_pp_in}) debe ser un MÚLTIPLO EXACTO del lote propuesto ({base_lote_chk}). Ejemplo: {base_lote_chk}, {base_lote_chk*2}, {base_lote_chk*3}...")
             else:
                 df_verif = obtener_base_kanbans()
                 if codigo_k_in in df_verif['N° Etiquetas'].values:
@@ -1036,7 +1038,7 @@ if tab_mod_elim:
                 k_seleccionado = st.selectbox("Seleccionar Código K a Modificar / Eliminar:", sorted(lista_k_mod))
                 row_sel = df_mod[df_mod['N° Etiquetas'] == k_seleccionado].iloc[0]
                 
-                subtab_mod, subtab_elim = st.tabs(["✏️ Modificar Registro", "🗑️️ Eliminar Registro"])
+                subtab_mod, subtab_elim = st.tabs(["✏️ Modificar Registro", "🗑 Eliminar Registro"])
                 
                 with subtab_mod:
                     mod_material_init = str(row_sel['Material']) if pd.notna(row_sel['Material']) else ""
@@ -1067,10 +1069,13 @@ if tab_mod_elim:
                         idx_etq = opts_tipo_etq_mod.index(etq_init)
                         mod_tipo_etq = st.selectbox("Tipo Etiqueta:", opts_tipo_etq_mod, index=idx_etq, key=f"m_etq_{k_seleccionado}")
 
-                    # MEJORA 2: Puesto de trabajo origen dinámico en pestaña de edición
                     puestos_o_disp_mod = ALMACENES_PUESTOS.get(mod_alm_orig, ["PRINCIPAL"])
                     if not puestos_o_disp_mod:
                         puestos_o_disp_mod = ["PRINCIPAL"]
+
+                    opts_tipo_kb = ["TARJETA", "GAVETA"]
+                    idx_kb = opts_tipo_kb.index(row_sel['Tipo Kanban']) if row_sel['Tipo Kanban'] in opts_tipo_kb else 0
+                    mod_tipo_kb = st.selectbox("Tipo Kanban:", opts_tipo_kb, index=idx_kb, key=f"m_tkb_sel_{k_seleccionado}")
 
                     with st.form(f"form_mod_{k_seleccionado}"):
                         m_col1, m_col2 = st.columns(2)
@@ -1080,12 +1085,19 @@ if tab_mod_elim:
                             st.text_input("Material Confirmado:", value=mod_material, disabled=True)
                             st.text_input("Almacén Origen Confirmado:", value=mod_alm_orig, disabled=True)
                             st.text_input("Tipo Etiqueta Confirmado:", value=mod_tipo_etq, disabled=True)
+                            st.text_input("Tipo Kanban Confirmado:", value=mod_tipo_kb, disabled=True)
                             
-                            opts_tipo_kb = ["TARJETA", "GAVETA"]
-                            idx_kb = opts_tipo_kb.index(row_sel['Tipo Kanban']) if row_sel['Tipo Kanban'] in opts_tipo_kb else 0
-                            mod_tipo_kb = st.selectbox("Tipo Kanban:", opts_tipo_kb, index=idx_kb)
-                            
-                            mod_medio = st.text_input("Medio / Soporte:", value=str(row_sel['Medio']) if pd.notna(row_sel['Medio']) else "").strip().upper()
+                            med_actual_str = str(row_sel['Medio']) if pd.notna(row_sel['Medio']) else ""
+                            if mod_tipo_kb == "TARJETA":
+                                idx_m_mod = OPCIONES_SOPORTE_TARJETA.index(med_actual_str) if med_actual_str in OPCIONES_SOPORTE_TARJETA else 0
+                                mod_medio = st.selectbox("Medio / Soporte Tarjeta:", OPCIONES_SOPORTE_TARJETA, index=idx_m_mod)
+                            else:
+                                opts_gaveta_full = OPCIONES_GAVETA + ["SIN MEDIO DEFINIDO"]
+                                gaveta_clean = med_actual_str.replace("GAVETA ", "").strip()
+                                idx_g_mod = opts_gaveta_full.index(gaveta_clean) if gaveta_clean in opts_gaveta_full else (opts_gaveta_full.index("SIN MEDIO DEFINIDO") if med_actual_str == "SIN MEDIO DEFINIDO" else 0)
+                                gaveta_sel_mod = st.selectbox("Tamaño / Medio Gaveta:", opts_gaveta_full, index=idx_g_mod)
+                                mod_medio = "SIN MEDIO DEFINIDO" if gaveta_sel_mod == "SIN MEDIO DEFINIDO" else f"GAVETA {gaveta_sel_mod}"
+
                             mod_centro = st.text_input("Centro:", value=str(row_sel['Centro']) if pd.notna(row_sel['Centro']) else "A110").strip().upper()
 
                         with m_col2:
@@ -1129,19 +1141,28 @@ if tab_mod_elim:
                                 mod_unid = st.selectbox("Unidad Reposición:", OPCIONES_UNIDAD_MEDIDA, index=idx_u)
                                 
                                 try:
-                                    t_prep_val = int(row_sel['Tiempo preparación abast. (en días)']) if pd.notna(row_sel['Tiempo preparación abast. (en días)']) else 1
+                                    t_prep_raw = row_sel['Tiempo preparación abast. (en días)']
+                                    t_prep_val = int(float(t_prep_raw)) if (pd.notna(t_prep_raw) and str(t_prep_raw).strip() != "") else 1
                                 except (ValueError, TypeError):
                                     t_prep_val = 1
-                                mod_t_prep = st.number_input("Tiempo Prep. (Días):", min_value=1, value=t_prep_val, step=1)
+                                
+                                t_prep_val_safe = max(1, t_prep_val)
+                                mod_t_prep = st.number_input("Tiempo Prep. (Días):", min_value=1, value=t_prep_val_safe, step=1)
 
                         st.markdown("---")
                         btn_guardar_mod = st.form_submit_button("💾 Guardar Modificaciones", type="primary", use_container_width=True)
 
                     if btn_guardar_mod:
+                        base_lote_m_chk = lote_min_mod if lote_min_mod is not None else 1.0
+                        es_m_multiplo_repo = (round(mod_cant_repo, 4) % round(base_lote_m_chk, 4) == 0)
+                        es_m_multiplo_pp = (round(mod_cant_pp, 4) % round(base_lote_m_chk, 4) == 0)
+
                         if mod_alm_orig == "L010" and mod_tipo_etq != "KE":
                             st.error("❌ Conflicto: Si Almacén Origen es 'L010', Tipo Etiqueta debe ser únicamente 'KE'.")
-                        elif lote_min_mod is not None and (round(mod_cant_repo, 4) % round(lote_min_mod, 4) != 0):
-                            st.error(f"❌ La Cantidad de Reposición ({mod_cant_repo}) debe ser un MÚLTIPLO EXACTO del Lote Packaging ({lote_min_mod}). Ejemplo: {lote_min_mod}, {lote_min_mod*2}, {lote_min_mod*3}...")
+                        elif not es_m_multiplo_repo:
+                            st.error(f"❌ La Cantidad de Reposición ({mod_cant_repo}) debe ser un MÚLTIPLO EXACTO del Lote Packaging ({base_lote_m_chk}). Ejemplo: {base_lote_m_chk}, {base_lote_m_chk*2}, {base_lote_m_chk*3}...")
+                        elif not es_m_multiplo_pp:
+                            st.error(f"❌ La Cantidad Punto de Pedido ({mod_cant_pp}) debe ser un MÚLTIPLO EXACTO del Lote Packaging ({base_lote_m_chk}). Ejemplo: {base_lote_m_chk}, {base_lote_m_chk*2}, {base_lote_m_chk*3}...")
                         else:
                             fecha_mod = obtener_fecha_hora_arg()
                             usr_mod = st.session_state['usuario_email']
@@ -1330,7 +1351,7 @@ if tab_perfil:
         st.subheader("👤 Configuración de Usuario y Herramientas")
         
         user_actual = st.session_state['usuario_email']
-        rol_actual_val = st.session_state['usuario_rol']
+        rol_actual_val = st.session_state['usuario_role'] if 'usuario_role' in st.session_state else st.session_state['usuario_rol']
         
         st.write(f"**Usuario:** {user_actual}")
         st.write(f"**Rol Asignado:** {rol_actual_val}")
@@ -1351,7 +1372,7 @@ if tab_perfil:
                     else:
                         st.error("❌ Las nuevas contraseñas no coinciden o están vacías.")
                 else:
-                    st.error("❌ La contraseña actual me es incorrecta.")
+                    st.error("❌ La contraseña actual es incorrecta.")
 
         if rol_actual_val == "Procesos":
             st.markdown("---")
@@ -1373,7 +1394,7 @@ if tab_perfil:
                     guardar_usuarios(USUARIOS_REGISTRADOS)
                     
                     if usr_sel == user_actual:
-                        st.session_state['usuario_role'] = nuevo_rol_sel
+                        st.session_state['usuario_rol'] = nuevo_rol_sel
                         
                     st.success(f"✅ ¡Rol de {usr_sel} actualizado correctamente a '{nuevo_rol_sel}'!")
                     st.rerun()
