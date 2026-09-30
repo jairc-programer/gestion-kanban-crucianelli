@@ -392,10 +392,6 @@ def limpiar_historiales_de_prueba():
     df_empty_tracker.to_csv(TRACKER_FILE, index=False)
 
 def obtener_siguiente_codigo_k(df):
-    """
-    Lógica de RECICLAJE de Código K:
-    Busca secuencialmente (1, 2, 3...) el primer número K que NO esté actualmente en uso.
-    """
     if df.empty or df['N° Etiquetas'].dropna().empty:
         return "K00000001"
     
@@ -482,6 +478,22 @@ if tab_crear:
     with tab_crear:
         st.subheader("Alta de Nuevo Kanban")
         
+        # BANNER DE CONFIRMACIÓN RESULTADO DE CREACIÓN
+        if 'msj_creacion' in st.session_state:
+            tipo_msj, texto_msj = st.session_state.pop('msj_creacion')
+            if tipo_msj == 'success':
+                st.markdown(f"""
+                <div style="background-color: rgba(16, 185, 129, 0.2); border: 2px solid #10b981; padding: 14px; border-radius: 10px; color: #34d399; font-size: 1.15rem; font-weight: bold; text-align: center; margin-bottom: 20px;">
+                    ✅ {texto_msj}
+                </div>
+                """, unsafe_allow_html=True)
+            elif tipo_msj == 'error':
+                st.markdown(f"""
+                <div style="background-color: rgba(239, 68, 68, 0.2); border: 2px solid #ef4444; padding: 14px; border-radius: 10px; color: #f87171; font-size: 1.15rem; font-weight: bold; text-align: center; margin-bottom: 20px;">
+                    ❌ {texto_msj}
+                </div>
+                """, unsafe_allow_html=True)
+
         st.info(f"Próximo Código K asignado automáticamente: **{proximo_k_val}**")
         
         col1, col2, col3 = st.columns(3)
@@ -511,7 +523,7 @@ if tab_crear:
                 puesto_origen_sel = st.selectbox("Puesto de Trabajo Origen", puesto_origen_opts)
                 puesto_origen = puesto_origen_sel if puesto_origen_sel != "-- Seleccionar --" else "-"
             else:
-                st.info("ℹ️️ Abastecimiento EXTERNO (KE)")
+                st.info("ℹ️ Abastecimiento EXTERNO (KE)")
                 st.text_input("Puesto de Trabajo Origen", value="- No aplica (Externo L010) -", disabled=True)
                 puesto_origen = "-"
 
@@ -536,9 +548,11 @@ if tab_crear:
             df_curr = obtener_base_kanbans()
             
             if not material or not puesto_destino_final:
-                st.error("❌ Error: Código de Material y Puesto Destino son campos obligatorios.")
+                st.session_state['msj_creacion'] = ('error', "NO SE PUDO CREAR KANBAN: Código de Material y Puesto Destino son obligatorios.")
+                st.rerun()
             elif tipo_soporte == "TARJETA" and float(cant_pp) >= float(cant_repo):
-                st.error(f"🚫 ACCIÓN BLOQUEADA: En Kanbans tipo TARJETA, el Punto de Pedido ({cant_pp}) DEBE SER MENOR a la Cantidad de Reposición ({cant_repo}).")
+                st.session_state['msj_creacion'] = ('error', f"NO SE PUDO CREAR KANBAN: En Tipo TARJETA, Punto de Pedido ({cant_pp}) debe ser menor a Reposición ({cant_repo}).")
+                st.rerun()
             elif not df_curr.empty and len(
                 df_curr[
                     (df_curr['Material'].astype(str).str.strip().str.upper() == material) & 
@@ -549,7 +563,8 @@ if tab_crear:
                     (df_curr['Material'].astype(str).str.strip().str.upper() == material) & 
                     (df_curr['Puesto de trabajo destino'].astype(str).str.strip().str.upper() == puesto_destino_final.upper())
                 ].iloc[0]['N° Etiquetas']
-                st.error(f"🚫 REGISTRO DUPLICADO: Ya existe el Kanban **{kb_existente}** para Material **{material}** en el Puesto **{puesto_destino_final}**.")
+                st.session_state['msj_creacion'] = ('error', f"NO SE PUDO CREAR KANBAN: Ya existe el Kanban {kb_existente} para Material {material} en el Puesto {puesto_destino_final}.")
+                st.rerun()
             else:
                 fecha_actual = obtener_fecha_hora_arg()
                 usr_act = st.session_state['usuario_email']
@@ -579,7 +594,8 @@ if tab_crear:
                 
                 registrar_log("CREO", codigo_k_nuevo, material, medio_str, almacen_destino, puesto_destino_final, usr_act)
                 crear_solicitud_tracker(material, codigo_k_nuevo, tipo_etiqueta_sap, puesto_destino_final, medio_str, "CÓDIGO NUEVO", "ARMAR PEDIDO", usr_act)
-                st.success(f"✅ ¡Kanban **{codigo_k_nuevo}** creado e ingresado correctamente!")
+                
+                st.session_state['msj_creacion'] = ('success', f"KANBAN {codigo_k_nuevo} CREADO EXITOSAMENTE")
                 st.rerun()
 
 # ==========================================
@@ -669,7 +685,7 @@ if tab_mod:
                     st.markdown("<br>", unsafe_allow_html=True)
                     if st.button("💾 Guardar Cambios del Kanban", type="primary"):
                         if m_tipo_soporte == "TARJETA" and float(m_cant_pp) >= float(m_cant_repo):
-                            st.error(f"🚫 ACCIÓN BLOQUEADA: En Kanbans TARJETA, Punto de Pedido ({m_cant_pp}) debe ser strictly menor a Reposición ({m_cant_repo}).")
+                            st.error(f"🚫 ACCIÓN BLOQUEADA: En Kanbans TARJETA, Punto de Pedido ({m_cant_pp}) debe ser menor a Reposición ({m_cant_repo}).")
                         else:
                             usr_act = st.session_state['usuario_email']
                             idx = df_live[df_live['N° Etiquetas'] == k_sel].index[0]
@@ -885,14 +901,19 @@ if tab_historial:
         st.subheader("📜 Historial Completo de Modificaciones")
         st.dataframe(cargar_logs().sort_values(by="Fecha_Hora", ascending=False), use_container_width=True)
         
-        if rol_actual == "Procesos":
+        # RESTRICCIÓN EXCLUSIVA PARA ADMINISTRADOR (jairc@crucianelli.com)
+        if st.session_state.get('usuario_email') == "jairc@crucianelli.com":
             st.markdown("---")
-            with st.expander("⚠️ Zona de Mantenimiento / Puesta a Cero (Producción)"):
-                st.warning("Esta acción eliminará todos los registros de prueba de Auditoría y Tracker Logístico para el arranque oficial.")
+            with st.expander("🔒 Zona Exclusiva Administrador - Puesta a Cero (Jair)"):
+                st.warning("⚠️ Esta acción eliminará los registros de Auditoría y Tracker Logístico.")
+                pass_confirm = st.text_input("Confirme su contraseña para ejecutar la limpieza:", type="password", key="pass_del_hist")
                 if st.button("🔴 Borrar Historiales de Prueba", type="primary"):
-                    limpiar_historiales_de_prueba()
-                    st.success("✅ Historiales y Tracker limpiados correctamente.")
-                    st.rerun()
+                    if pass_confirm == "procesosjair":
+                        limpiar_historiales_de_prueba()
+                        st.success("✅ Historiales y Tracker limpiados correctamente.")
+                        st.rerun()
+                    else:
+                        st.error("❌ Contraseña de confirmación incorrecta. Operación cancelada.")
 
 tab_perfil = obtener_tab("👤 Mi Perfil")
 if tab_perfil:
