@@ -937,7 +937,7 @@ if tab_tracker:
 tab_export = obtener_tab("📊 Datos de Kanban")
 if tab_export:
     with tab_export:
-        st.subheader("📊 Datos de Kanban (Sincronizado en Vivo)")
+        st.subheader("📊 Datos de Kanban")
         df_export_live = obtener_base_kanbans()
         st.dataframe(df_export_live, use_container_width=True)
         
@@ -953,7 +953,7 @@ if tab_export:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
             type="primary"
         )
-tab_historial = obtener_tab("📜 Historial Auditoría")
+tab_historial = obtener_tab("📜 Historial")
 if tab_historial:
     with tab_historial:
         st.subheader("📜 Historial Completo de Modificaciones")
