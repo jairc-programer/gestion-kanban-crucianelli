@@ -100,7 +100,7 @@ TRACKER_FILE = "tracker_ejecucion.csv"
 USERS_FILE = "usuarios.json"
 SHEET_NAME = "Kanbans CRUCIANELLI"
 
-LOG_COLUMNS = ["Fecha_Hora", "Acción", "Código_K", "Material", "Medio", "Almacén_Destino", "Puesto_Destino", "Usuario"]
+LOG_COLUMNS = ["Fecha_Hora", "Acción", "Código_K", "Material", "Medio", "Almacén_Destino", "Puesto_Destino", "Detalle_Cambio", "Usuario"]
 TRACKER_COLUMNS = ["ID_Solicitud", "Fecha_Solicitud", "Material", "Código_K", "Tipo_KB", "Puesto_Destino", "Medio", "Cambio", "Acción_Requerida", "Cargado_SAP", "Impreso", "Fecha_Impresion", "Estado_Fisico", "Fecha_Finalizacion", "Observación", "Usuario_Procesos"]
 
 ROLES_PREDEFINIDOS = {
@@ -326,7 +326,7 @@ def cargar_logs():
             return pd.DataFrame(columns=LOG_COLUMNS)
     return pd.DataFrame(columns=LOG_COLUMNS)
 
-def registrar_log(accion, codigo_k, material, medio, alm_dest, puesto_dest, usuario):
+def registrar_log(accion, codigo_k, material, medio, alm_dest, puesto_dest, usuario, detalle_cambio="-"):
     now = obtener_fecha_hora_arg()
     df_actual = cargar_logs()
     if pd.isna(medio) or str(medio).strip() in ["None", "nan", "N/A", ""]:
@@ -336,9 +336,15 @@ def registrar_log(accion, codigo_k, material, medio, alm_dest, puesto_dest, usua
     accion_norm = mapeo_guardado.get(accion, accion)
 
     nuevo_log = pd.DataFrame([{
-        "Fecha_Hora": now, "Acción": accion_norm, "Código_K": codigo_k,
-        "Material": material, "Medio": str(medio), "Almacén_Destino": alm_dest,
-        "Puesto_Destino": puesto_dest, "Usuario": usuario
+        "Fecha_Hora": now, 
+        "Acción": accion_norm, 
+        "Código_K": codigo_k,
+        "Material": material, 
+        "Medio": str(medio), 
+        "Almacén_Destino": alm_dest,
+        "Puesto_Destino": puesto_dest, 
+        "Detalle_Cambio": str(detalle_cambio),
+        "Usuario": usuario
     }])
     df_final = pd.concat([df_actual, nuevo_log], ignore_index=True)
     df_final.to_csv(LOG_FILE, index=False)
