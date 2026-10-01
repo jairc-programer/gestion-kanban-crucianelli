@@ -953,7 +953,7 @@ if tab_export:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
             type="primary"
         )
-tab_historial = obtener_tab("📜 Historial")
+tab_historial = obtener_tab("📜 Historial Auditoría")
 if tab_historial:
     with tab_historial:
         st.subheader("📜 Historial Completo de Modificaciones")
