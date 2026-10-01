@@ -111,7 +111,8 @@ ROLES_PREDEFINIDOS = {
     
     "mlopez@crucianelli.com": "Logistica", "recepcion3@crucianelli.com": "Logistica",
     "gpereyra@crucianelli.com": "Logistica", "jporta@crucianelli.com": "Logistica",
-    "spetetta@crucianelli.com": "Logistica",
+    "spetetta@crucianelli.com": "Logistica", "ileon@crucianelli.com": "Logistica", 
+    "gfianchini@crucianelli.com": "Logistica",
     
     "fany@crucianelli.com": "Consulta", "strillini@crucianelli.com": "Consulta",
     "apicotto@crucianelli.com": "Consulta", "fsolis@crucianelli.com": "Consulta",
@@ -457,11 +458,11 @@ st.markdown("<br>", unsafe_allow_html=True)
 # MENÚ POR PERFILES Y NAVEGACIÓN
 # ==========================================
 if rol_actual == "Procesos":
-    lista_tabs = ["➕ Crear Nuevo Kanban", "✏️ Modificar y Eliminar", "📈 Panel KPIs & Métricas", "🚚 Tracker de Ejecución Logística", "📊 Extraer Datos de TablaZ", "📜 Historial Auditoría", "👤 Mi Perfil"]
+    lista_tabs = ["➕ Crear Nuevo Kanban", "✏️ Modificar y Eliminar", "📈 Panel KPIs & Métricas", "🚚 Tracker de Ejecución Logística", "📊 Datos de Kanban", "📜 Historial Auditoría", "👤 Mi Perfil"]
 elif rol_actual == "Logistica":
-    lista_tabs = ["🚚 Tracker de Ejecución Logística", "📈 Panel KPIs & Métricas", "📋 Consulta General", "📊 Extraer Datos de TablaZ", "📜 Historial Auditoría", "👤 Mi Perfil"]
+    lista_tabs = ["🚚 Tracker de Ejecución Logística", "📈 Panel KPIs & Métricas", "📊 Datos de Kanban", "📜 Historial Auditoría", "👤 Mi Perfil"]
 else:
-    lista_tabs = ["📈 Panel KPIs & Métricas", "📋 Consulta General", "📊 Extraer Datos de TablaZ", "🚚 Estado de Solicitudes", "👤 Mi Perfil"]
+    lista_tabs = ["📈 Panel KPIs & Métricas", "📊 Datos de Kanban", "🚚 Estado de Solicitudes", "👤 Mi Perfil"]
 
 tabs = st.tabs(lista_tabs)
 
@@ -933,16 +934,10 @@ if tab_tracker:
                         st.success(f"✅ Solicitud **{sol_sel}** actualizada con éxito.")
                         st.rerun()
 
-tab_consulta = obtener_tab("📋 Consulta General")
-if tab_consulta:
-    with tab_consulta:
-        st.subheader("📋 Consulta General de Kanbans (En Vivo)")
-        st.dataframe(obtener_base_kanbans(), use_container_width=True)
-
-tab_export = obtener_tab("📊 Extraer Datos de TablaZ")
+tab_export = obtener_tab("📊 Datos de Kanban")
 if tab_export:
     with tab_export:
-        st.subheader("📊 Extraer Datos de TablaZ (Sincronizado con Excel)")
+        st.subheader("📊 Datos de Kanban (Sincronizado en Vivo)")
         df_export_live = obtener_base_kanbans()
         st.dataframe(df_export_live, use_container_width=True)
         
@@ -952,13 +947,12 @@ if tab_export:
         excel_bytes = output.getvalue()
         
         st.download_button(
-            label="📥 Descargar Tabla Z Actualizada (.xlsx)", 
+            label="📥 Descargar Datos de Kanban (.xlsx)", 
             data=excel_bytes, 
-            file_name="TablaZ_Kanbans_Actualizada.xlsx", 
+            file_name="Datos_Kanban_Actualizada.xlsx", 
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
             type="primary"
         )
-
 tab_historial = obtener_tab("📜 Historial Auditoría")
 if tab_historial:
     with tab_historial:
