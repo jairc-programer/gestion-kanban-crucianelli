@@ -1,81 +1,108 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import plotly.express as px
-import plotly.graph_objects as bg
-import io
+import re
 import os
 import json
-import re
+import io
 from datetime import datetime
 import pytz
+import plotly.express as px
 
-# Configuración de zona horaria de Argentina
+st.set_page_config(page_title="Gestor de Kanbans - Crucianelli", layout="wide")
+
+# ==========================================
+# ESTILOS CSS PERSONALIZADOS (DARK PREMIUM)
+# ==========================================
+st.markdown("""
+<style>
+    .stApp { background-color: #0e1117; color: #e0e0e0; }
+    header {visibility: hidden;}
+
+    div[data-testid="stVerticalBlock"] > div:has(div.card-container) {
+        background: rgba(22, 27, 34, 0.6);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        padding: 18px;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+
+    div[data-testid="stMetric"] {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 10px;
+        padding: 12px 16px;
+    }
+    
+    div[data-testid="stMetricLabel"] { font-size: 0.82rem !important; color: #909296 !important; }
+    div[data-testid="stMetricValue"] { font-size: 1.8rem !important; color: #ffffff !important; }
+
+    div[data-baseweb="tab-list"] { gap: 8px; border-bottom: none !important; margin-bottom: 15px; }
+
+    div[data-baseweb="tab"] {
+        height: 38px;
+        border-radius: 8px !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        background-color: rgba(255, 255, 255, 0.02) !important;
+        color: #c1c2c5 !important;
+        padding: 0px 16px !important;
+        font-size: 0.88rem !important;
+    }
+
+    div[data-baseweb="tab"][aria-selected="true"] {
+        border: 1px solid #a83232 !important;
+        background-color: rgba(168, 50, 50, 0.15) !important;
+        color: #ff8e8e !important;
+    }
+
+    .stTextInput input, .stSelectbox select, div[data-baseweb="select"] > div {
+        border-radius: 8px !important;
+        background-color: rgba(255, 255, 255, 0.04) !important;
+        border: 1px solid rgba(255, 255, 255, 0.12) !important;
+        color: #ffffff !important;
+    }
+
+    div.stButton > button { border-radius: 8px !important; font-weight: 500 !important; }
+    div.stButton > button[kind="primary"] { background-color: #8b2626 !important; border: 1px solid #b33636 !important; }
+
+    .badge-rol {
+        background: rgba(74, 144, 226, 0.2);
+        border: 1px solid #4a90e2;
+        color: #93c5fd;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.82rem;
+        font-weight: 600;
+    }
+
+    .header-box {
+        background: rgba(22, 27, 34, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        padding: 12px 24px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 ARG_TZ = pytz.timezone('America/Argentina/Buenos_Aires')
 
 def obtener_fecha_hora_arg():
     return datetime.now(ARG_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
-# Configuración de página Streamlit
-st.set_page_config(
-    page_title="Gestión de Kanbans - Crucianelli",
-    page_icon="📦",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+DB_FILE = "TablaZ.xlsx"
+PKG_FILE = "Lote packaging.xlsx"
+LOG_FILE = "historial_cambios.csv"
+TRACKER_FILE = "tracker_ejecucion.csv"
+USERS_FILE = "usuarios.json"
+SHEET_NAME = "Kanbans CRUCIANELLI"
 
-# Estilos CSS
-st.markdown("""
-<style>
-    .main { background-color: #0e1117; color: #c9d1d9; }
-    .stApp { background-color: #0e1117; }
-    .header-box {
-        background: linear-gradient(90deg, #1f2937 0%, #111827 100%);
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-        margin-bottom: 20px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        border: 1px solid #374151;
-    }
-    .badge-rol {
-        background-color: #d97706;
-        color: white;
-        padding: 6px 14px;
-        border-radius: 20px;
-        font-weight: bold;
-        font-size: 0.85rem;
-        letter-spacing: 0.5px;
-    }
-    .card-container {
-        background-color: #161b22;
-        border: 1px solid #30363d;
-        border-radius: 10px;
-        padding: 20px;
-        margin-bottom: 15px;
-    }
-</style>
-""", unsafe_allow_html=True)
+LOG_COLUMNS = ["Fecha_Hora", "Acción", "Código_K", "Material", "Medio", "Almacén_Destino", "Puesto_Destino", "Usuario"]
+TRACKER_COLUMNS = ["ID_Solicitud", "Fecha_Solicitud", "Material", "Código_K", "Tipo_KB", "Puesto_Destino", "Medio", "Cambio", "Acción_Requerida", "Cargado_SAP", "Impreso", "Fecha_Impresion", "Estado_Fisico", "Fecha_Finalizacion", "Observación", "Usuario_Procesos"]
 
-# Archivos de persistencia
-DB_FILE = 'TablaZ.xlsx'
-SHEET_NAME = 'Hoja1'
-LOG_FILE = 'historial_cambios.csv'
-USERS_FILE = 'usuarios_registrados.json'
-PKG_FILE = 'Packaging.xlsx'
-TRACKER_FILE = 'tracker_logistica.csv'
-
-LOG_COLUMNS = ['Fecha_Hora', 'Acción', 'Código_K', 'Material', 'Medio', 'Almacén_Destino', 'Puesto_Destino', 'Usuario']
-TRACKER_COLUMNS = [
-    'ID_Solicitud', 'Fecha_Solicitud', 'Material', 'Código_K', 'Tipo_KB', 
-    'Puesto_Destino', 'Medio', 'Cambio', 'Acción_Requerida', 
-    'Cargado_SAP', 'Impreso', 'Fecha_Impresion', 'Estado_Fisico', 
-    'Fecha_Finalizacion', 'Observación', 'Usuario_Procesos'
-]
-
-# Diccionario de Roles Predefinidos
 ROLES_PREDEFINIDOS = {
     "jairc@crucianelli.com": "Procesos", "mmagarello@crucianelli.com": "Procesos",
     "mcabral@crucianelli.com": "Procesos", "gtuninetti@crucianelli.com": "Procesos",
@@ -84,8 +111,7 @@ ROLES_PREDEFINIDOS = {
     
     "mlopez@crucianelli.com": "Logistica", "recepcion3@crucianelli.com": "Logistica",
     "gpereyra@crucianelli.com": "Logistica", "jporta@crucianelli.com": "Logistica",
-    "spetetta@crucianelli.com": "Logistica", "ileon@crucianelli.com": "Logistica",
-    "gfianchini@crucianelli.com": "Logistica",
+    "spetetta@crucianelli.com": "Logistica",
     
     "fany@crucianelli.com": "Consulta", "strillini@crucianelli.com": "Consulta",
     "apicotto@crucianelli.com": "Consulta", "fsolis@crucianelli.com": "Consulta",
@@ -431,11 +457,11 @@ st.markdown("<br>", unsafe_allow_html=True)
 # MENÚ POR PERFILES Y NAVEGACIÓN
 # ==========================================
 if rol_actual == "Procesos":
-    lista_tabs = ["➕ Crear Nuevo Kanban", "✏️ Modificar y Eliminar", "📈 Panel KPIs & Métricas", "🚚 Tracker de Ejecución Logística", "📊 Datos de Kanban", "📜 Historial Auditoría", "👤 Mi Perfil"]
+    lista_tabs = ["➕ Crear Nuevo Kanban", "✏️ Modificar y Eliminar", "📈 Panel KPIs & Métricas", "🚚 Tracker de Ejecución Logística", "📊 Extraer Datos de TablaZ", "📜 Historial Auditoría", "👤 Mi Perfil"]
 elif rol_actual == "Logistica":
-    lista_tabs = ["🚚 Tracker de Ejecución Logística", "📈 Panel KPIs & Métricas", "📊 Datos de Kanban", "📜 Historial Auditoría", "👤 Mi Perfil"]
+    lista_tabs = ["🚚 Tracker de Ejecución Logística", "📈 Panel KPIs & Métricas", "📋 Consulta General", "📊 Extraer Datos de TablaZ", "📜 Historial Auditoría", "👤 Mi Perfil"]
 else:
-    lista_tabs = ["📈 Panel KPIs & Métricas", "📊 Datos de Kanban", "🚚 Estado de Solicitudes", "👤 Mi Perfil"]
+    lista_tabs = ["📈 Panel KPIs & Métricas", "📋 Consulta General", "📊 Extraer Datos de TablaZ", "🚚 Estado de Solicitudes", "👤 Mi Perfil"]
 
 tabs = st.tabs(lista_tabs)
 
@@ -907,10 +933,16 @@ if tab_tracker:
                         st.success(f"✅ Solicitud **{sol_sel}** actualizada con éxito.")
                         st.rerun()
 
-tab_export = obtener_tab("📊 Datos de Kanban")
+tab_consulta = obtener_tab("📋 Consulta General")
+if tab_consulta:
+    with tab_consulta:
+        st.subheader("📋 Consulta General de Kanbans (En Vivo)")
+        st.dataframe(obtener_base_kanbans(), use_container_width=True)
+
+tab_export = obtener_tab("📊 Extraer Datos de TablaZ")
 if tab_export:
     with tab_export:
-        st.subheader("📊 Datos de Kanban (Sincronizado con Excel)")
+        st.subheader("📊 Extraer Datos de TablaZ (Sincronizado con Excel)")
         df_export_live = obtener_base_kanbans()
         st.dataframe(df_export_live, use_container_width=True)
         
