@@ -759,6 +759,36 @@ if tab_mod:
                             
                             cant_pp_final = m_cant_repo if m_tipo_soporte == "GAVETA" else m_cant_pp
                             
+                            # --- DETECCIÓN AUTOMÁTICA DE CAMBIOS PARA LOGÍSTICA ---
+                            cambios_detectados = []
+                            
+                            mapeo_campos = [
+                                ('Centro', m_centro),
+                                ('Tipo Kanban', m_tipo_soporte),
+                                ('Medio', m_medio_str),
+                                ('Almacén Origen', m_almacen_origen),
+                                ('Almacen Destino', m_almacen_destino),
+                                ('Puesto trabajo Origen', m_puesto_origen),
+                                ('Puesto de trabajo destino', m_puesto_destino),
+                                ('Cantidad Reposicion', m_cant_repo),
+                                ('Cantidad Punto de Pedido', cant_pp_final),
+                                ('Unidad Reposicion', m_unidad),
+                                ('Tiempo preparación abast. (en días)', m_dias)
+                            ]
+                            
+                            for col_nombre, val_nuevo in mapeo_campos:
+                                val_viejo = df_live.loc[idx, col_nombre]
+                                # Normalizamos a string sin decimales flotantes innecesarios si son numéricos
+                                str_v = str(int(val_viejo)) if isinstance(val_viejo, (int, float)) and pd.notna(val_viejo) and float(val_viejo).is_integer() else str(val_viejo)
+                                str_n = str(int(val_nuevo)) if isinstance(val_nuevo, (int, float)) and float(val_nuevo).is_integer() else str(val_nuevo)
+                                
+                                if str_v.strip() != str_n.strip():
+                                    cambios_detectados.append(f"{col_nombre}: '{str_v}' ➔ '{str_n}'")
+                            
+                            texto_detalle_cambios = " | ".join(cambios_detectados) if cambios_detectados else "Sin cambios de valores"
+                            # -----------------------------------------------------
+
+                            # Actualización de valores
                             df_live.loc[idx, 'Centro'] = m_centro
                             df_live.loc[idx, 'Tipo Kanban'] = m_tipo_soporte
                             df_live.loc[idx, 'Medio'] = m_medio_str
@@ -774,7 +804,9 @@ if tab_mod:
                             df_live.loc[idx, 'Usuario Modificación'] = usr_act
                             
                             actualizar_base_kanbans(df_live)
-                            registrar_log("ACTUALIZO", k_sel, mat_sel, m_medio_str, m_almacen_destino, m_puesto_destino, usr_act)
+                            
+                            # Se guarda en el log con el detalle de lo que cambió
+                            registrar_log("ACTUALIZO", k_sel, mat_sel, m_medio_str, m_almacen_destino, m_puesto_destino, usr_act, detalle_cambio=texto_detalle_cambios)
                             crear_solicitud_tracker(mat_sel, k_sel, df_live.loc[idx, 'Tipo Etiqueta'], m_puesto_destino, m_medio_str, "ACTUALIZACIÓN", "IMPRIMIR / REEMPLAZAR", usr_act)
                             
                             st.session_state['msj_mod'] = ('success', f"CÓDIGO {k_sel} MODIFICADO CON EXITO")
