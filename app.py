@@ -1093,11 +1093,28 @@ if tab_export:
         st.subheader("📊 Datos de Kanban")
         df_export_live = obtener_base_kanbans()
         if not df_export_live.empty:
-            st.dataframe(df_export_live, use_container_width=True)
+            # --- FILTROS DE BÚSQUEDA PARCIAL ---
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                filtro_k = st.text_input("🔍 Filtro por Código Kanban (ej. 7634):", placeholder="Buscar fragmento de código K...").strip().upper()
+            with col_f2:
+                filtro_mat = st.text_input("🔍 Filtro por Código de Material (ej. 10939):", placeholder="Buscar fragmento de código Material...").strip().upper()
+
+            df_filtrado_export = df_export_live.copy()
+            if filtro_k:
+                df_filtrado_export = df_filtrado_export[
+                    df_filtrado_export['N° Etiquetas'].astype(str).str.upper().str.contains(filtro_k, na=False)
+                ]
+            if filtro_mat:
+                df_filtrado_export = df_filtrado_export[
+                    df_filtrado_export['Material'].astype(str).str.upper().str.contains(filtro_mat, na=False)
+                ]
+
+            st.dataframe(df_filtrado_export, use_container_width=True)
             
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_export_live.to_excel(writer, sheet_name=SHEET_NAME, index=False)
+                df_filtrado_export.to_excel(writer, sheet_name=SHEET_NAME, index=False)
             excel_bytes = output.getvalue()
             
             st.download_button(
