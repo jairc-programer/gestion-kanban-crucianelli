@@ -915,27 +915,33 @@ if tab_kpis:
 
         st.markdown("---")
 
-        # --- SECCIÓN 2: TIPO DE MEDIO & SOLICITUDES NO FINALIZADAS ---
+        # --- SECCIÓN 2: TIPO DE KANBAN & SOLICITUDES NO FINALIZADAS ---
         kpi_c1, kpi_c2 = st.columns(2)
 
         with kpi_c1:
-            st.markdown("##### 🍰 Distribución por Tipo de Medio (Tarjeta vs Gaveta)")
-            if not df_k_live.empty and 'Medio' in df_k_live.columns:
-                df_medio = df_k_live['Medio'].value_counts().reset_index()
-                df_medio.columns = ['Tipo de Medio', 'Cantidad']
+            st.markdown("##### 🍰 Distribución por Tipo de Kanban (Tarjeta vs Gaveta)")
+            if not df_k_live.empty and 'Tipo Kanban' in df_k_live.columns:
+                # Lectura explícita de la columna 'Tipo Kanban'
+                series_tipo = df_k_live['Tipo Kanban'].fillna("NO DEFINIDO").replace("", "NO DEFINIDO")
+                df_tipo = series_tipo.value_counts().reset_index()
+                df_tipo.columns = ['Tipo Kanban', 'Cantidad']
 
-                fig_pie = px.pie(
-                    df_medio, 
-                    names='Tipo de Medio', 
-                    values='Cantidad', 
-                    hole=0.4,
-                    template="plotly_dark",
-                    color_discrete_sequence=px.colors.qualitative.Pastel
-                )
-                fig_pie.update_layout(height=330, margin=dict(l=20, r=20, t=30, b=20))
-                st.plotly_chart(fig_pie, use_container_width=True)
+                if not df_tipo.empty and df_tipo['Cantidad'].sum() > 0:
+                    fig_pie = px.pie(
+                        df_tipo, 
+                        names='Tipo Kanban', 
+                        values='Cantidad', 
+                        hole=0.4,
+                        template="plotly_dark",
+                        color_discrete_sequence=['#3b82f6', '#10b981', '#f59e0b']
+                    )
+                    fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+                    fig_pie.update_layout(height=330, margin=dict(l=20, r=20, t=30, b=20), showlegend=True)
+                    st.plotly_chart(fig_pie, use_container_width=True)
+                else:
+                    st.info("No se encontraron registros en el tipo de Kanban.")
             else:
-                st.info("No hay datos disponibles sobre el tipo de medio.")
+                st.info("No hay datos disponibles sobre el tipo de Kanban.")
 
         with kpi_c2:
             st.markdown("##### ⏳ Solicitudes Pendientes / No Finalizadas")
@@ -964,7 +970,7 @@ if tab_kpis:
 
         st.markdown("---")
 
-        # --- SECCIÓN 3: MEDICIÓN DE TIEMPOS LOGÍSTICOS (SAP, IMPRESIÓN, ACCIÓN FÍSICA) ---
+        # --- SECCIÓN 3: MEDICIÓN DE TIEMPOS LOGÍSTICOS ---
         st.markdown("##### ⏱️ Medición de Tiempos de Respuesta (Tracker Logístico)")
         
         if not df_tr_kpi.empty:
@@ -1021,7 +1027,6 @@ if tab_kpis:
                 st.info("Las columnas de fechas necesarias no están presentes en la base del Tracker.")
         else:
             st.info("No hay datos suficientes en el Tracker Logístico para calcular métricas de tiempo.")
-
 # ==========================================
 # VISTA: TRACKER LOGÍSTICO
 # ==========================================
