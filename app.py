@@ -1154,13 +1154,20 @@ if tab_historial:
                 st.warning("⚠️ Esta acción eliminará los registros de Auditoría y Tracker Logístico.")
                 pass_confirm = st.text_input("Confirme su contraseña para ejecutar la limpieza:", type="password", key="pass_del_hist")
                 if st.button("🔴 Borrar Historiales de Prueba", type="primary"):
-                    pass_real = USUARIOS_REGISTRADOS.get(usr_actual_aud, {}).get("pass")
-                    if pass_confirm == pass_real:
+                    # Extraer la contraseña sin importar el formato (dict o str)
+                    datos_usr = USUARIOS_REGISTRADOS.get(usr_actual_aud, {})
+                    if isinstance(datos_usr, dict):
+                        pass_real = datos_usr.get("pass", "")
+                    else:
+                        pass_real = str(datos_usr)
+                    
+                    # Validar contraseña
+                    if pass_confirm and pass_confirm == pass_real:
                         limpiar_historiales_de_prueba()
                         st.success("✅ Historiales y Tracker limpiados correctamente.")
                         st.rerun()
                     else:
-                        st.error("❌ Contraseña de confirmación incorrecta. Operación cancelada.")
+                        st.error(f"❌ Contraseña incorrecta. (Si iniciaste con Google Workspace, tu clave es 'google_oauth' o la que cambiaste en Mi Perfil).")
 
 # ==========================================
 # VISTA: MI PERFIL
