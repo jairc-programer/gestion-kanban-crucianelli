@@ -258,6 +258,7 @@ if not st.session_state['usuario_email']:
 # ==========================================
 # MANEJO CENTRALIZADO Y SINCRONIZADO EN VIVO
 # ==========================================
+@st.cache_data(ttl=1)
 def cargar_base_desde_disco():
     if os.path.exists(DB_FILE):
         try:
@@ -285,18 +286,19 @@ def cargar_base_desde_disco():
     return pd.DataFrame(columns=COLUMNS)
 
 def obtener_base_kanbans(force_reload=False):
-    if force_reload or 'df_kanbans_global' not in st.session_state:
-        st.session_state['df_kanbans_global'] = cargar_base_desde_disco()
-    return st.session_state['df_kanbans_global']
+    if force_reload:
+        st.cache_data.clear()
+    return cargar_base_desde_disco()
 
 def actualizar_base_kanbans(nuevo_df):
     df_limpio = nuevo_df.reset_index(drop=True)
-    st.session_state['df_kanbans_global'] = df_limpio
     try:
         with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:
             df_limpio.to_excel(writer, sheet_name=SHEET_NAME, index=False)
     except Exception as e:
         st.error(f"⚠️ Error al guardar en el archivo Excel físico: {e}")
+    # Limpiamos la caché inmediatamente para forzar la lectura del disco en el próximo rerun
+    st.cache_data.clear()
 
 def cargar_packaging():
     if os.path.exists(PKG_FILE):
@@ -437,7 +439,7 @@ st.markdown(f"""
 col_head_space, col_refresh, col_logout = st.columns([3.8, 1.2, 1])
 with col_refresh:
     if st.button("🔄 Actualizar Datos", use_container_width=True, help="Releer y actualizar datos desde TablaZ.xlsx"):
-        st.session_state.pop('df_kanbans_global', None)
+        st.cache_data.clear()
         st.toast("🔄 Datos sincronizados correctamente desde TablaZ.xlsx")
         st.rerun()
 
@@ -445,7 +447,7 @@ with col_logout:
     if st.button("Cerrar Sesión", use_container_width=True):
         st.session_state['usuario_email'] = None
         st.session_state['usuario_rol'] = None
-        st.session_state.pop('df_kanbans_global', None)
+        st.cache_data.clear()
         st.rerun()
 
 total_k = len(df_kanbans)
