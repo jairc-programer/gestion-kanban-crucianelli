@@ -859,7 +859,9 @@ if tab_kpis:
         st.subheader("📊 Panel Interactivo de KPIs y Analítica")
         df_logs_kpi = cargar_logs()
         df_k_live = obtener_base_kanbans()
+        df_tr_kpi = cargar_tracker()
         
+        # --- FILTROS DE ANÁLISIS ---
         with st.expander("🔍 Filtros de Análisis", expanded=True):
             f_col1, f_col2, f_col3 = st.columns(3)
             with f_col1:
@@ -875,6 +877,7 @@ if tab_kpis:
             with f_col3:
                 f_usr = st.selectbox("Usuario Responsable:", ["Todos"] + (list(df_logs_kpi['Usuario'].dropna().unique()) if not df_logs_kpi.empty else []), key="kpi_usr")
 
+        # Aplicar filtros a los logs
         df_logs_filtrado = df_logs_kpi.copy() if not df_logs_kpi.empty else pd.DataFrame()
         if not df_logs_filtrado.empty and isinstance(rango_fechas_kpi, tuple) and len(rango_fechas_kpi) == 2:
             fi, ff = rango_fechas_kpi
@@ -882,6 +885,7 @@ if tab_kpis:
             if f_alm != "Todos": df_logs_filtrado = df_logs_filtrado[df_logs_filtrado['Almacén_Destino'] == f_alm]
             if f_usr != "Todos": df_logs_filtrado = df_logs_filtrado[df_logs_filtrado['Usuario'] == f_usr]
 
+        # Métricas generales del período
         c_creados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'CREACIÓN']) if not df_logs_filtrado.empty else 0
         c_actualizados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'MODIFICACIÓN']) if not df_logs_filtrado.empty else 0
         c_eliminados = len(df_logs_filtrado[df_logs_filtrado['Acción'] == 'ELIMINACIÓN']) if not df_logs_filtrado.empty else 0
@@ -893,14 +897,18 @@ if tab_kpis:
         m4.metric("🗑️ Eliminados", c_eliminados)
         st.markdown("---")
 
+        # --- SECCIÓN 1: PUESTOS Y EVOLUCIÓN ---
         g_col1, g_col2 = st.columns(2)
         with g_col1:
             st.markdown("##### 🏭 Top Puestos de Trabajo Destino")
-            df_puestos = df_k_live['Puesto de trabajo destino'].value_counts().reset_index()
-            df_puestos.columns = ['Puesto Destino', 'Cantidad']
-            fig_puestos = px.bar(df_puestos.head(10), x='Cantidad', y='Puesto Destino', orientation='h', text='Cantidad', template="plotly_dark", color='Cantidad', color_continuous_scale='Reds')
-            fig_puestos.update_layout(yaxis={'categoryorder': 'total ascending'}, height=320, margin=dict(l=20, r=20, t=20, b=20))
-            st.plotly_chart(fig_puestos, use_container_width=True)
+            if not df_k_live.empty and 'Puesto de trabajo destino' in df_k_live.columns:
+                df_puestos = df_k_live['Puesto de trabajo destino'].value_counts().reset_index()
+                df_puestos.columns = ['Puesto Destino', 'Cantidad']
+                fig_puestos = px.bar(df_puestos.head(10), x='Cantidad', y='Puesto Destino', orientation='h', text='Cantidad', template="plotly_dark", color='Cantidad', color_continuous_scale='Reds')
+                fig_puestos.update_layout(yaxis={'categoryorder': 'total ascending'}, height=320, margin=dict(l=20, r=20, t=20, b=20))
+                st.plotly_chart(fig_puestos, use_container_width=True)
+            else:
+                st.info("Sin información de puestos de trabajo.")
 
         with g_col2:
             st.markdown("##### 📈 Evolución de Movimientos")
@@ -913,145 +921,116 @@ if tab_kpis:
             else:
                 st.info("Sin registros en este rango.")
 
-tab_tracker = obtener_tab("🚚 Tracker de Ejecución Logística") or obtener_tab("🚚 Estado de Solicitudes")
-if tab_tracker:
-    with tab_tracker:
-        st.subheader("🚚 Cola de Ejecución Logística & Estado SAP / Impresión")
-        df_tr = cargar_tracker()
-        
-        if df_tr.empty:
-            st.info("No hay solicitudes de actualización pendientes en la cola.")
-        else:
-            filtro_est = st.radio("Filtrar Solicitudes:", ["Pendientes (Incompletas)", "Todas las Solicitudes", "Finalizadas"], horizontal=True)
-            df_tr_show = df_tr.copy()
-            if filtro_est == "Pendientes (Incompletas)":
-                df_tr_show = df_tr_show[df_tr_show['Estado_Fisico'] != 'Entregado']
-            elif filtro_est == "Finalizadas":
-                df_tr_show = df_tr_show[df_tr_show['Estado_Fisico'] == 'Entregado']
+        st.markdown("---")
 
-            st.dataframe(df_tr_show, use_container_width=True)
-            
-            if rol_actual in ["Logistica", "Procesos"]:
-                st.markdown("---")
-                st.subheader("⚡ Actualizar Estado de Solicitud (Logística)")
-                
-                sol_ids = df_tr_show['ID_Solicitud'].tolist() if not df_tr_show.empty else []
-                if sol_ids:
-                    col_tr1, col_tr2, col_tr3 = st.columns(3)
-                    with col_tr1:
-                        sol_sel = st.selectbox("Seleccione ID Solicitud a actualizar:", sol_ids)
-                        row_tr = df_tr[df_tr['ID_Solicitud'] == sol_sel].iloc[0]
-                        st.caption(f"**Material:** {row_tr['Material']} | **Código K:** {row_tr['Código_K']} | **Acción:** {row_tr['Acción_Requerida']}")
+        # --- SECCIÓN 2: TIPO DE MEDIO & SOLICITUDES NO FINALIZADAS ---
+        kpi_c1, kpi_c2 = st.columns(2)
 
-                    with col_tr2:
-                        chk_sap = st.checkbox("Cargado en SAP", value=(str(row_tr['Cargado_SAP']) == 'SI'))
-                        chk_imp = st.checkbox("Impreso", value=(str(row_tr['Impreso']) == 'SI'))
-                        
-                    with col_tr3:
-                        curr_est = str(row_tr['Estado_Fisico'])
-                        idx_est = ["Pendiente", "En Proceso", "Entregado"].index(curr_est) if curr_est in ["Pendiente", "En Proceso", "Entregado"] else 0
-                        est_fisico = st.selectbox("Estado Físico en Puesto:", ["Pendiente", "En Proceso", "Entregado"], index=idx_est)
-                        obs_tr = st.text_input("Observaciones:", value=str(row_tr['Observación'] if row_tr['Observación'] != '-' else ''))
+        with kpi_c1:
+            st.markdown("##### 🍰 Distribución por Tipo de Medio (Tarjeta vs Gaveta)")
+            if not df_k_live.empty and 'Medio' in df_k_live.columns:
+                df_medio = df_k_live['Medio'].value_counts().reset_index()
+                df_medio.columns = ['Tipo de Medio', 'Cantidad']
 
-                    if st.button("💾 Actualizar Estado de Solicitud", type="primary"):
-                        idx_tr = df_tr[df_tr['ID_Solicitud'] == sol_sel].index[0]
-                        now_str = datetime.now(ARG_TZ).strftime("%Y-%m-%d")
-                        
-                        df_tr = df_tr.astype(object)
-                        df_tr.loc[idx_tr, 'Cargado_SAP'] = "SI" if chk_sap else "NO"
-                        df_tr.loc[idx_tr, 'Impreso'] = "SI" if chk_imp else "NO"
-                        if chk_imp and str(df_tr.loc[idx_tr, 'Fecha_Impresion']) in ["-", "None", "nan", ""]:
-                            df_tr.loc[idx_tr, 'Fecha_Impresion'] = now_str
-                            
-                        df_tr.loc[idx_tr, 'Estado_Fisico'] = str(est_fisico)
-                        if est_fisico == "Entregado" and str(df_tr.loc[idx_tr, 'Fecha_Finalizacion']) in ["-", "None", "nan", ""]:
-                            df_tr.loc[idx_tr, 'Fecha_Finalizacion'] = now_str
-                            
-                        df_tr.loc[idx_tr, 'Observación'] = str(obs_tr) if obs_tr.strip() else "-"
-                        guardar_tracker(df_tr)
-                        st.success(f"✅ Solicitud **{sol_sel}** actualizada con éxito.")
-                        st.rerun()
-
-tab_export = obtener_tab("📊 Datos de Kanban")
-if tab_export:
-    with tab_export:
-        st.subheader("📊 Datos de Kanban")
-        df_export_live = obtener_base_kanbans()
-        st.dataframe(df_export_live, use_container_width=True)
-        
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_export_live.to_excel(writer, sheet_name=SHEET_NAME, index=False)
-        excel_bytes = output.getvalue()
-        
-        st.download_button(
-            label="📥 Descargar Datos de Kanban (.xlsx)", 
-            data=excel_bytes, 
-            file_name="Datos_Kanban_Actualizada.xlsx", 
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
-            type="primary"
-        )
-tab_historial = obtener_tab("📜 Historial Auditoría")
-if tab_historial:
-    with tab_historial:
-        st.subheader("📜 Historial Completo de Modificaciones")
-        st.dataframe(cargar_logs().sort_values(by="Fecha_Hora", ascending=False), use_container_width=True)
-        
-        if st.session_state.get('usuario_email') == "jairc@crucianelli.com":
-            st.markdown("---")
-            with st.expander("🔒 Zona Exclusiva Administrador - Puesta a Cero (Jair)"):
-                st.warning("⚠️ Esta acción eliminará los registros de Auditoría y Tracker Logístico.")
-                pass_confirm = st.text_input("Confirme su contraseña para ejecutar la limpieza:", type="password", key="pass_del_hist")
-                if st.button("🔴 Borrar Historiales de Prueba", type="primary"):
-                    if pass_confirm == "procesosjair":
-                        limpiar_historiales_de_prueba()
-                        st.success("✅ Historiales y Tracker limpiados correctamente.")
-                        st.rerun()
-                    else:
-                        st.error("❌ Contraseña de confirmación incorrecta. Operación cancelada.")
-
-tab_perfil = obtener_tab("👤 Mi Perfil")
-if tab_perfil:
-    with tab_perfil:
-        st.subheader("👤 Mi Perfil de Usuario")
-        usr_actual = st.session_state['usuario_email']
-        
-        col_p1, col_p2 = st.columns([1, 2])
-        with col_p1:
-            st.markdown('<div class="card-container">', unsafe_allow_html=True)
-            st.markdown("#### 📄 Datos de la Cuenta")
-            st.write(f"**Usuario / Correo:** {usr_actual}")
-            st.write(f"**Rol Asignado:** `{rol_actual.upper()}`")
-            st.write(f"**Dominio:** Crucianelli S.A.")
-            st.write(f"**Último Acceso:** {obtener_fecha_hora_arg()}")
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-            st.markdown("<br>", unsafe_allow_html=True)
-            with st.expander("🔑 Cambiar Contraseña Directa"):
-                pass_curr = st.text_input("Contraseña Actual:", type="password", key="p_curr")
-                pass_new1 = st.text_input("Nueva Contraseña:", type="password", key="p_new1")
-                pass_new2 = st.text_input("Confirmar Nueva Contraseña:", type="password", key="p_new2")
-                
-                if st.button("💾 Actualizar Contraseña"):
-                    if not pass_curr or not pass_new1 or not pass_new2:
-                        st.error("❌ Complete todos los campos.")
-                    elif pass_new1 != pass_new2:
-                        st.error("❌ Las nuevas contraseñas no coinciden.")
-                    elif USUARIOS_REGISTRADOS.get(usr_actual, {}).get("pass") != pass_curr:
-                        st.error("❌ La contraseña actual es incorrecta.")
-                    else:
-                        USUARIOS_REGISTRADOS[usr_actual]["pass"] = pass_new1
-                        guardar_usuarios(USUARIOS_REGISTRADOS)
-                        st.success("✅ ¡Contraseña actualizada con éxito!")
-
-        with col_p2:
-            st.markdown("#### 📜 Mi Historial de Actividad Reciente")
-            df_logs_all = cargar_logs()
-            if not df_logs_all.empty:
-                df_my_logs = df_logs_all[df_logs_all['Usuario'] == usr_actual].sort_values(by="Fecha_Hora", ascending=False)
-                if not df_my_logs.empty:
-                    st.dataframe(df_my_logs, use_container_width=True)
-                else:
-                    st.info("Aún no has registrado movimientos en el sistema.")
+                fig_pie = px.pie(
+                    df_medio, 
+                    names='Tipo de Medio', 
+                    values='Cantidad', 
+                    hole=0.4,
+                    template="plotly_dark",
+                    color_discrete_sequence=px.colors.qualitative.Pastel
+                )
+                fig_pie.update_layout(height=330, margin=dict(l=20, r=20, t=30, b=20))
+                st.plotly_chart(fig_pie, use_container_width=True)
             else:
-                st.info("No existen registros en el historial.")
+                st.info("No hay datos disponibles sobre el tipo de medio.")
+
+        with kpi_c2:
+            st.markdown("##### ⏳ Solicitudes Pendientes / No Finalizadas")
+            if not df_tr_kpi.empty:
+                # Filtrar las solicitudes incompletas (Estado físico diferente de 'Entregado' o SAP/Impresión en NO)
+                df_pendientes = df_tr_kpi[df_tr_kpi['Estado_Fisico'] != 'Entregado'].copy()
+                
+                if not df_pendientes.empty:
+                    # Crear contador por Estado Físico
+                    df_est_pend = df_pendientes['Estado_Fisico'].value_counts().reset_index()
+                    df_est_pend.columns = ['Estado Físico', 'Cantidad']
+
+                    fig_pend = px.bar(
+                        df_est_pend,
+                        x='Estado Físico',
+                        y='Cantidad',
+                        text='Cantidad',
+                        color='Estado Físico',
+                        template="plotly_dark",
+                        color_discrete_sequence=['#f59e0b', '#3b82f6', '#ef4444']
+                    )
+                    fig_pend.update_layout(height=330, margin=dict(l=20, r=20, t=30, b=20), showlegend=False)
+                    st.plotly_chart(fig_pend, use_container_width=True)
+                else:
+                    st.success("🎉 ¡Todas las solicitudes en el Tracker se encuentran finalizadas!")
+            else:
+                st.info("No hay solicitudes registradas en el Tracker Logístico.")
+
+        st.markdown("---")
+
+        # --- SECCIÓN 3: MEDICIÓN DE TIEMPOS LOGÍSTICOS (SAP, IMPRESIÓN, ACCIÓN FÍSICA) ---
+        st.markdown("##### ⏱️ Medición de Tiempos de Respuesta (Tracker Logístico)")
+        
+        if not df_tr_kpi.empty:
+            df_t = df_tr_kpi.copy()
+
+            # Conversión de fechas a datetime
+            cols_fechas = ['Fecha_Solicitud', 'Fecha_Impresion', 'Fecha_Finalizacion']
+            for col in cols_fechas:
+                if col in df_t.columns:
+                    df_t[col] = pd.to_datetime(df_t[col], errors='coerce')
+
+            if 'Fecha_Solicitud' in df_t.columns:
+                # Cálculo de tiempos en horas
+                if 'Fecha_Impresion' in df_t.columns:
+                    df_t['Hs_Solicitud_a_SAP_Imp'] = (df_t['Fecha_Impresion'] - df_t['Fecha_Solicitud']).dt.total_seconds() / 3600
+                if 'Fecha_Finalizacion' in df_t.columns:
+                    df_t['Hs_Imp_a_AccionFisica'] = (df_t['Fecha_Finalizacion'] - df_t['Fecha_Impresion']).dt.total_seconds() / 3600
+                    df_t['Hs_Ciclo_Total'] = (df_t['Fecha_Finalizacion'] - df_t['Fecha_Solicitud']).dt.total_seconds() / 3600
+
+                prom_imp = df_t['Hs_Solicitud_a_SAP_Imp'].mean() if 'Hs_Solicitud_a_SAP_Imp' in df_t.columns else None
+                prom_fis = df_t['Hs_Imp_a_AccionFisica'].mean() if 'Hs_Imp_a_AccionFisica' in df_t.columns else None
+                prom_tot = df_t['Hs_Ciclo_Total'].mean() if 'Hs_Ciclo_Total' in df_t.columns else None
+
+                t1, t2, t3 = st.columns(3)
+                t1.metric("⏱️ Promedio Solicitud ➔ SAP / Impresión", f"{prom_imp:.1f} hs" if pd.notnull(prom_imp) else "N/A")
+                t2.metric("⏱️ Promedio Impresión ➔ Acción Física", f"{prom_fis:.1f} hs" if pd.notnull(prom_fis) else "N/A")
+                t3.metric("⏱️ Promedio Ciclo Completo Total", f"{prom_tot:.1f} hs" if pd.notnull(prom_tot) else "N/A")
+
+                # Gráfico interactivo por fecha de solicitud
+                df_t['Fecha_Corta'] = df_t['Fecha_Solicitud'].dt.strftime('%Y-%m-%d')
+                if df_t['Fecha_Corta'].dropna().any():
+                    df_prom_diario = df_t.groupby('Fecha_Corta')[['Hs_Solicitud_a_SAP_Imp', 'Hs_Imp_a_AccionFisica']].mean().reset_index()
+                    df_melted = df_prom_diario.melt(
+                        id_vars=['Fecha_Corta'], 
+                        value_vars=['Hs_Solicitud_a_SAP_Imp', 'Hs_Imp_a_AccionFisica'], 
+                        var_name='Etapa', 
+                        value_name='Horas Promedio'
+                    )
+                    df_melted['Etapa'] = df_melted['Etapa'].map({
+                        'Hs_Solicitud_a_SAP_Imp': 'Solicitud a SAP / Impresión', 
+                        'Hs_Imp_a_AccionFisica': 'Impresión a Acción Física'
+                    })
+
+                    fig_tiempos = px.bar(
+                        df_melted, 
+                        x='Fecha_Corta', 
+                        y='Horas Promedio', 
+                        color='Etapa', 
+                        barmode='group',
+                        template="plotly_dark", 
+                        title="Tiempo Promedio de Respuesta por Fecha de Solicitud (Horas)",
+                        labels={'Fecha_Corta': 'Fecha de Solicitud', 'Horas Promedio': 'Horas Promedio'}
+                    )
+                    fig_tiempos.update_layout(height=350, margin=dict(l=20, r=20, t=40, b=20))
+                    st.plotly_chart(fig_tiempos, use_container_width=True)
+            else:
+                st.info("Las columnas de fechas necesarias no están presentes en la base del Tracker.")
+        else:
+            st.info("No hay datos suficientes en el Tracker Logístico para calcular métricas de tiempo.")
