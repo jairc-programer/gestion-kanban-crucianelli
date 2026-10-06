@@ -1036,8 +1036,8 @@ fig_tiempos.update_layout(
 )
 st.plotly_chart(fig_tiempos, use_container_width=True)
           
-        else:st.info("Las columnas de fechas necesarias no están presentes en la base del Tracker.")
-        else:st.info("No hay datos suficientes en el Tracker Logístico para calcular métricas de tiempo.")
+        else: st.info("Las columnas de fechas necesarias no están presentes en la base del Tracker.")
+        else: st.info("No hay datos suficientes en el Tracker Logístico para calcular métricas de tiempo.")
 # ==========================================
 # VISTA: TRACKER LOGÍSTICO
 # ==========================================
