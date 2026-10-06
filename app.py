@@ -1013,7 +1013,8 @@ if tab_kpis:
                         'Hs_Imp_a_AccionFisica': 'Impresión a Acción Física'
                     })
 
-                    fig_tiempos = px.line(
+                  # --- CÓDIGO NUEVO (Gráfico de Líneas con Marcadores) ---
+fig_tiempos = px.line(
     df_melted, 
     x='Fecha_Corta', 
     y='Horas Promedio', 
@@ -1034,7 +1035,8 @@ fig_tiempos.update_layout(
     yaxis_title="Horas Promedio"
 )
 st.plotly_chart(fig_tiempos, use_container_width=True)
-            else:
+          
+        else:
                 st.info("Las columnas de fechas necesarias no están presentes en la base del Tracker.")
         else:
             st.info("No hay datos suficientes en el Tracker Logístico para calcular métricas de tiempo.")
