@@ -1013,18 +1013,27 @@ if tab_kpis:
                         'Hs_Imp_a_AccionFisica': 'Impresión a Acción Física'
                     })
 
-                    fig_tiempos = px.bar(
-                        df_melted, 
-                        x='Fecha_Corta', 
-                        y='Horas Promedio', 
-                        color='Etapa', 
-                        barmode='group',
-                        template="plotly_dark", 
-                        title="Tiempo Promedio de Respuesta por Fecha de Solicitud (Horas)",
-                        labels={'Fecha_Corta': 'Fecha de Solicitud', 'Horas Promedio': 'Horas Promedio'}
-                    )
-                    fig_tiempos.update_layout(height=350, margin=dict(l=20, r=20, t=40, b=20))
-                    st.plotly_chart(fig_tiempos, use_container_width=True)
+                    fig_tiempos = px.line(
+    df_melted, 
+    x='Fecha_Corta', 
+    y='Horas Promedio', 
+    color='Etapa',
+    markers=True,
+    template="plotly_dark", 
+    title="Evolución del Tiempo Promedio de Respuesta (Horas)",
+    labels={'Fecha_Corta': 'Fecha de Solicitud', 'Horas Promedio': 'Horas Promedio'},
+    color_discrete_map={
+        'Solicitud a SAP / Impresión': '#3b82f6', 
+        'Impresión a Acción Física': '#ef4444'
+    }
+)
+fig_tiempos.update_layout(
+    height=350, 
+    margin=dict(l=20, r=20, t=40, b=20),
+    xaxis_title="Fecha de Solicitud",
+    yaxis_title="Horas Promedio"
+)
+st.plotly_chart(fig_tiempos, use_container_width=True)
             else:
                 st.info("Las columnas de fechas necesarias no están presentes en la base del Tracker.")
         else:
