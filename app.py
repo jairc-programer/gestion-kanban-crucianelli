@@ -1001,30 +1001,36 @@ if tab_kpis:
 
                 df_t['Fecha_Corta'] = df_t['Fecha_Solicitud'].dt.strftime('%Y-%m-%d')
                 if df_t['Fecha_Corta'].dropna().any():
-                    df_prom_diario = df_t.groupby('Fecha_Corta')[['Hs_Solicitud_a_SAP_Imp', 'Hs_Imp_a_AccionFisica']].mean().reset_index()
-                    df_melted = df_prom_diario.melt(
-                        id_vars=['Fecha_Corta'], 
-                        value_vars=['Hs_Solicitud_a_SAP_Imp', 'Hs_Imp_a_AccionFisica'], 
-                        var_name='Etapa', 
-                        value_name='Horas Promedio'
-                    )
-                    df_melted['Etapa'] = df_melted['Etapa'].map({
-                        'Hs_Solicitud_a_SAP_Imp': 'Solicitud a SAP / Impresión', 
-                        'Hs_Imp_a_AccionFisica': 'Impresión a Acción Física'
-                    })
+                    # Identificar dinámicamente las columnas de tiempo calculadas que existen en el DataFrame
+                    cols_tiempos_existentes = [col for col in ['Hs_Solicitud_a_SAP_Imp', 'Hs_Imp_a_AccionFisica', 'Hs_Ciclo_Total'] if col in df_t.columns]
 
-                    fig_tiempos = px.bar(
-                        df_melted, 
-                        x='Fecha_Corta', 
-                        y='Horas Promedio', 
-                        color='Etapa', 
-                        barmode='group',
-                        template="plotly_dark", 
-                        title="Tiempo Promedio de Respuesta por Fecha de Solicitud (Horas)",
-                        labels={'Fecha_Corta': 'Fecha de Solicitud', 'Horas Promedio': 'Horas Promedio'}
-                    )
-                    fig_tiempos.update_layout(height=350, margin=dict(l=20, r=20, t=40, b=20))
-                    st.plotly_chart(fig_tiempos, use_container_width=True)
+                    if cols_tiempos_existentes:
+                        df_prom_diario = df_t.groupby('Fecha_Corta')[cols_tiempos_existentes].mean().reset_index()
+                        df_melted = df_prom_diario.melt(
+                            id_vars=['Fecha_Corta'], 
+                            value_vars=cols_tiempos_existentes, 
+                            var_name='Etapa', 
+                            value_name='Horas Promedio'
+                        )
+                        mapeo_etapas = {
+                            'Hs_Solicitud_a_SAP_Imp': 'Solicitud a SAP / Impresión', 
+                            'Hs_Imp_a_AccionFisica': 'Impresión a Acción Física',
+                            'Hs_Ciclo_Total': 'Ciclo Completo Total'
+                        }
+                        df_melted['Etapa'] = df_melted['Etapa'].map(mapeo_etapas)
+
+                        fig_tiempos = px.bar(
+                            df_melted, 
+                            x='Fecha_Corta', 
+                            y='Horas Promedio', 
+                            color='Etapa', 
+                            barmode='group',
+                            template="plotly_dark", 
+                            title="Tiempo Promedio de Respuesta por Fecha de Solicitud (Horas)",
+                            labels={'Fecha_Corta': 'Fecha de Solicitud', 'Horas Promedio': 'Horas Promedio'}
+                        )
+                        fig_tiempos.update_layout(height=350, margin=dict(l=20, r=20, t=40, b=20))
+                        st.plotly_chart(fig_tiempos, use_container_width=True)
             else:
                 st.info("Las columnas de fechas necesarias no están presentes en la base del Tracker.")
         else:
