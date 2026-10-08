@@ -1,8 +1,7 @@
-streamlit>=1.30.0
+streamlit>=1.35.0
+sqlalchemy>=2.0.0
+bcrypt>=4.0.0
 pandas>=2.0.0
+plotly>=5.18.0
+streamlit-aggrid>=0.3.4
 openpyxl>=3.1.0
-streamlit
-pandas
-openpyxl
-pytz
-plotly
