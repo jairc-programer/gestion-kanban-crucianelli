@@ -1,10 +1,29 @@
 import os
 from contextlib import contextmanager
+import streamlit as st
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from src.database.models import Base
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///kanban_crucianelli.db")
+def get_database_url():
+    url = None
+    # 1. Intentar obtener desde los Secrets de Streamlit Cloud
+    try:
+        url = st.secrets.get("DATABASE_URL")
+    except Exception:
+        pass
+
+    # 2. Si no existe en secrets, buscar en el entorno local (variables de sistema o .env)
+    if not url:
+        url = os.getenv("DATABASE_URL", "sqlite:///kanban_crucianelli.db")
+
+    # 3. Corregir el prefijo para SQLAlchemy + psycopg3 si la URL viene de Supabase
+    if url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+psycopg://", 1)
+
+    return url
+
+DATABASE_URL = get_database_url()
 
 engine = create_engine(
     DATABASE_URL,
