@@ -20,42 +20,47 @@ if not st.session_state['usuario']:
         tab_login, tab_reg = st.tabs(["🔑 Iniciar Sesión", "📝 Registrarse"])
         
         with tab_login:
-            email = st.text_input("Correo Corporativo (@crucianelli.com):", key="log_email").strip().lower()
-            password = st.text_input("Contraseña:", type="password", key="log_pass")
-            
-            if st.button("Ingresar", type="primary", use_container_width=True):
-                usr_data, err = autenticar_usuario(email, password)
-                if err:
-                    st.toast(err, icon="❌")
-                else:
-                    st.session_state['usuario'] = {
-                        "email": usr_data.email,
-                        "rol": usr_data.rol.value
-                    }
-                    st.toast(f"Bienvenido {usr_data.email}", icon="✅")
-                    st.rerun()
+            with st.form("form_login"):
+                email = st.text_input("Correo Corporativo (@crucianelli.com):", key="log_email")
+                password = st.text_input("Contraseña:", type="password", key="log_pass")
+                btn_login = st.form_submit_button("Ingresar", type="primary", use_container_width=True)
+                
+                if btn_login:
+                    e_clean = email.strip().lower()
+                    p_clean = password.strip()
+                    usr_data, err = autenticar_usuario(e_clean, p_clean)
+                    if err:
+                        st.toast(err, icon="❌")
+                    else:
+                        st.session_state['usuario'] = {
+                            "email": usr_data.email,
+                            "rol": usr_data.rol.value
+                        }
+                        st.toast(f"Bienvenido {usr_data.email}", icon="✅")
+                        st.rerun()
 
         with tab_reg:
-            reg_email = st.text_input("Correo Corporativo (@crucianelli.com):", key="reg_email")
-            reg_pass1 = st.text_input("Contraseña:", type="password", key="reg_p1")
-            reg_pass2 = st.text_input("Confirmar Contraseña:", type="password", key="reg_p2")
-            
-            if st.button("Crear Cuenta", use_container_width=True):
-                # Limpiamos los textos dentro de la lógica del botón
-                e_clean = reg_email.strip().lower()
-                p1_clean = reg_pass1.strip()
-                p2_clean = reg_pass2.strip()
+            with st.form("form_registro"):
+                reg_email = st.text_input("Correo Corporativo (@crucianelli.com):", key="reg_email")
+                reg_pass1 = st.text_input("Contraseña:", type="password", key="reg_p1")
+                reg_pass2 = st.text_input("Confirmar Contraseña:", type="password", key="reg_p2")
+                btn_reg = st.form_submit_button("Crear Cuenta", use_container_width=True)
                 
-                if not e_clean or not p1_clean or not p2_clean:
-                    st.toast("Ingrese un correo y contraseña válidos.", icon="⚠️")
-                elif p1_clean != p2_clean:
-                    st.toast("Las contraseñas no coinciden.", icon="⚠️")
-                else:
-                    ok, msj = registrar_usuario(e_clean, p1_clean)
-                    if ok:
-                        st.toast(msj, icon="✅")
+                if btn_reg:
+                    e_clean = reg_email.strip().lower()
+                    p1_clean = reg_pass1.strip()
+                    p2_clean = reg_pass2.strip()
+                    
+                    if not e_clean or not p1_clean or not p2_clean:
+                        st.toast("Ingrese un correo y contraseña válidos.", icon="⚠️")
+                    elif p1_clean != p2_clean:
+                        st.toast("Las contraseñas no coinciden.", icon="⚠️")
                     else:
-                        st.toast(msj, icon="❌")
+                        ok, msj = registrar_usuario(e_clean, p1_clean)
+                        if ok:
+                            st.toast(msj, icon="✅")
+                        else:
+                            st.toast(msj, icon="❌")
     st.stop()
 
 # --- BARRA SUPERIOR Y ROUTING DE NAVEGACIÓN ---
