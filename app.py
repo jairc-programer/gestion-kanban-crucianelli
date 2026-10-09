@@ -37,11 +37,13 @@ if not st.session_state['usuario']:
 
         with tab_reg:
             reg_email = st.text_input("Correo Corporativo (@crucianelli.com):", key="reg_email").strip().lower()
-            reg_pass1 = st.text_input("Contraseña:", type="password", key="reg_p1")
-            reg_pass2 = st.text_input("Confirmar Contraseña:", type="password", key="reg_p2")
+            reg_pass1 = st.text_input("Contraseña:", type="password", key="reg_p1").strip()
+            reg_pass2 = st.text_input("Confirmar Contraseña:", type="password", key="reg_p2").strip()
             
             if st.button("Crear Cuenta", use_container_width=True):
-                if reg_pass1 != reg_pass2:
+                if not reg_pass1 or not reg_pass2:
+                    st.toast("Ingrese una contraseña válida.", icon="⚠️")
+                elif reg_pass1 != reg_pass2:
                     st.toast("Las contraseñas no coinciden.", icon="⚠️")
                 else:
                     ok, msj = registrar_usuario(reg_email, reg_pass1)
@@ -94,5 +96,6 @@ else: # Consulta
         st.Page("pages/7_👤_Mi_Perfil.py", title="Mi Perfil", icon="👤")
     ]
 
+# Ejecutar el enrutador de páginas
 pg = st.navigation(paginas)
 pg.run()
