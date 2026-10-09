@@ -7,17 +7,15 @@ from src.database.models import Base
 
 def get_database_url():
     url = None
-    # 1. Intentar obtener desde los Secrets de Streamlit Cloud
     try:
-        url = st.secrets.get("DATABASE_URL")
+        if "DATABASE_URL" in st.secrets:
+            url = st.secrets["DATABASE_URL"]
     except Exception:
         pass
 
-    # 2. Si no existe en secrets, buscar en el entorno local (variables de sistema o .env)
     if not url:
         url = os.getenv("DATABASE_URL", "sqlite:///kanban_crucianelli.db")
 
-    # 3. Corregir el prefijo para SQLAlchemy + psycopg3 si la URL viene de Supabase
     if url.startswith("postgresql://"):
         url = url.replace("postgresql://", "postgresql+psycopg://", 1)
 
@@ -25,9 +23,15 @@ def get_database_url():
 
 DATABASE_URL = get_database_url()
 
+connect_args = {}
+if "sqlite" in DATABASE_URL:
+    connect_args["check_same_thread"] = False
+elif "pooler.supabase.com" in DATABASE_URL or "postgresql" in DATABASE_URL:
+    connect_args["prepare_threshold"] = None
+
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
+    connect_args=connect_args,
     pool_pre_ping=True
 )
 
