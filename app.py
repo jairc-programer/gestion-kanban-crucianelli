@@ -36,17 +36,22 @@ if not st.session_state['usuario']:
                     st.rerun()
 
         with tab_reg:
-            reg_email = st.text_input("Correo Corporativo (@crucianelli.com):", key="reg_email").strip().lower()
-            reg_pass1 = st.text_input("Contraseña:", type="password", key="reg_p1").strip()
-            reg_pass2 = st.text_input("Confirmar Contraseña:", type="password", key="reg_p2").strip()
+            reg_email = st.text_input("Correo Corporativo (@crucianelli.com):", key="reg_email")
+            reg_pass1 = st.text_input("Contraseña:", type="password", key="reg_p1")
+            reg_pass2 = st.text_input("Confirmar Contraseña:", type="password", key="reg_p2")
             
             if st.button("Crear Cuenta", use_container_width=True):
-                if not reg_pass1 or not reg_pass2:
-                    st.toast("Ingrese una contraseña válida.", icon="⚠️")
-                elif reg_pass1 != reg_pass2:
+                # Limpiamos los textos dentro de la lógica del botón
+                e_clean = reg_email.strip().lower()
+                p1_clean = reg_pass1.strip()
+                p2_clean = reg_pass2.strip()
+                
+                if not e_clean or not p1_clean or not p2_clean:
+                    st.toast("Ingrese un correo y contraseña válidos.", icon="⚠️")
+                elif p1_clean != p2_clean:
                     st.toast("Las contraseñas no coinciden.", icon="⚠️")
                 else:
-                    ok, msj = registrar_usuario(reg_email, reg_pass1)
+                    ok, msj = registrar_usuario(e_clean, p1_clean)
                     if ok:
                         st.toast(msj, icon="✅")
                     else:
