@@ -1,32 +1,45 @@
 import streamlit as st
-from src.services.kanban_service import eliminar_kanban_seguro
+import pandas as pd
+import os
 
-st.title("✏️ Modificar y Eliminar Kanban")
-
-# Verificar sesión activa
 if 'usuario' not in st.session_state or not st.session_state['usuario']:
-    st.warning("Debe iniciar sesión para realizar modificaciones o borrados.")
     st.stop()
 
-usuario_actual = st.session_state['usuario']
+DB_FILE = "TablaZ.xlsx"
+SHEET_NAME = "Kanbans CRUCIANELLI"
 
-st.subheader("🗑️ Zona de Borrado Restringido")
-st.caption(f"Usuario activo: **{usuario_actual['email']}** | Rol: **{usuario_actual['rol']}**")
+st.subheader("✏️ Modificar / 🗑️ Eliminar Kanban")
 
-with st.form("form_eliminar_kanban"):
-    codigo_k = st.text_input("Ingrese el Código K a eliminar (ej. K00000012)")
-    confirmacion = st.checkbox("Confirmo que deseo eliminar este registro de la base de datos de forma permanente.")
+if os.path.exists(DB_FILE):
+    df_live = pd.read_excel(DB_FILE, sheet_name=SHEET_NAME)
     
-    submit_borrar = st.form_submit_button("Eliminar Kanban", type="primary")
+    col_mod, col_del = st.columns([2, 1])
     
-    if submit_borrar:
-        if not codigo_k:
-            st.error("Debe ingresar un Código K.")
-        elif not confirmacion:
-            st.warning("Debe marcar la casilla de confirmación.")
-        else:
-            exito, mensaje = eliminar_kanban_seguro(codigo_k.strip(), usuario_actual['email'])
-            if exito:
-                st.success(mensaje)
-            else:
-                st.error(mensaje)
+    with col_mod:
+        st.markdown("##### Modificar Registro")
+        busqueda = st.text_input("Buscar por Material o Código K:").strip().upper()
+        if busqueda:
+            res = df_live[(df_live['Material'].astype(str).str.contains(busqueda)) | (df_live['N° Etiquetas'].astype(str).str.contains(busqueda))]
+            if not res.empty:
+                sel = st.selectbox("Seleccione Kanban:", res['N° Etiquetas'] + " - " + res['Material'])
+                k_code = sel.split(" - ")[0]
+                row = res[res['N° Etiquetas'] == k_code].iloc[0]
+                
+                n_cant = st.number_input("Nueva Cantidad Reposición", value=float(row['Cantidad Reposicion']))
+                if st.button("Guardar Cambios"):
+                    idx = df_live[df_live['N° Etiquetas'] == k_code].index[0]
+                    df_live.loc[idx, 'Cantidad Reposicion'] = n_cant
+                    with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:
+                        df_live.to_excel(writer, sheet_name=SHEET_NAME, index=False)
+                    st.success("Kanban modificado correctamente.")
+                    st.rerun()
+
+    with col_del:
+        st.markdown("##### Eliminar Registro")
+        k_del = st.text_input("Código K a eliminar:")
+        if st.button("Eliminar", type="primary") and k_del:
+            df_del = df_live[df_live['N° Etiquetas'] != k_del]
+            with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:
+                df_del.to_excel(writer, sheet_name=SHEET_NAME, index=False)
+            st.success(f"Código {k_del} eliminado.")
+            st.rerun()

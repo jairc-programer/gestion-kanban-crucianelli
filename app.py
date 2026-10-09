@@ -28,7 +28,6 @@ if not st.session_state['usuario']:
                 if err:
                     st.toast(err, icon="❌")
                 else:
-                    # Guardamos la estructura en formato de diccionario estándar
                     st.session_state['usuario'] = {
                         "email": usr_data.email,
                         "rol": usr_data.rol.value
@@ -96,3 +95,4 @@ else: # Consulta
     ]
 
 pg = st.navigation(paginas)
+pg.run()
