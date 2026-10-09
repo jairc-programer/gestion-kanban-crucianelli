@@ -29,7 +29,7 @@ if not st.session_state['usuario']:
                     st.toast(err, icon="❌")
                 else:
                     st.session_state['usuario'] = usr_data
-                    st.toast(f"Bienvenido {usr.email}", icon="✅")
+                    st.toast(f"Bienvenido {usr_data['email']}", icon="✅")
                     st.rerun()
 
         with tab_reg:
