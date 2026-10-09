@@ -31,7 +31,6 @@ if not st.session_state['usuario']:
                     st.session_state['usuario'] = usr_data
                     st.toast(f"Bienvenido {usr_data['email']}", icon="✅")
                     st.rerun()
-
         with tab_reg:
             reg_email = st.text_input("Correo Corporativo (@crucianelli.com):", key="reg_email").strip().lower()
             reg_pass1 = st.text_input("Contraseña:", type="password", key="reg_p1")
