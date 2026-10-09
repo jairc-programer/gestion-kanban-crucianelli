@@ -2,12 +2,18 @@ import streamlit as st
 import pandas as pd
 import re, os
 from datetime import datetime
-import pytz
+
+# Manejo de Zona Horaria flexible (nativo zoneinfo o pytz como respaldo)
+try:
+    from zoneinfo import ZoneInfo
+    ARG_TZ = ZoneInfo('America/Argentina/Buenos_Aires')
+except ImportError:
+    import pytz
+    ARG_TZ = pytz.timezone('America/Argentina/Buenos_Aires')
 
 if 'usuario' not in st.session_state or not st.session_state['usuario']:
     st.stop()
 
-ARG_TZ = pytz.timezone('America/Argentina/Buenos_Aires')
 DB_FILE, PKG_FILE, LOG_FILE, TRACKER_FILE = "TablaZ.xlsx", "Lote packaging.xlsx", "historial_cambios.csv", "tracker_ejecucion.csv"
 SHEET_NAME = "Kanbans CRUCIANELLI"
 
@@ -23,11 +29,15 @@ ALMACENES_PUESTOS = {
 LISTA_ALMACENES = list(ALMACENES_PUESTOS.keys())
 
 def obtener_siguiente_codigo_k(df):
-    if df.empty or df['N° Etiquetas'].dropna().empty: return "K00000001"
+    if df.empty or 'N° Etiquetas' not in df.columns or df['N° Etiquetas'].dropna().empty: 
+        return "K00000001"
     numeros = [int(m.group(0)) for val in df['N° Etiquetas'].dropna() if (m := re.search(r'\d+', str(val)))]
+    if not numeros:
+        return "K00000001"
     set_num = set(numeros)
     i = 1
-    while i in set_num: i += 1
+    while i in set_num: 
+        i += 1
     return f"K{i:08d}"
 
 st.subheader("➕ Alta de Nuevo Kanban")
@@ -65,13 +75,22 @@ if st.button("💾 Guardar y Crear Kanban", type="primary"):
         now = datetime.now(ARG_TZ).strftime("%Y-%m-%d %H:%M:%S")
         usr = st.session_state['usuario']['email']
         nuevo_reg = {
-            'N° Etiquetas': proximo_k_val, 'Tipo Etiqueta': "KI" if es_interno else "KE",
-            'Tipo Kanban': tipo_soporte, 'Medio': medio_str, 'Material': material, 'Centro': centro,
-            'Almacén Origen': almacen_origen, 'Almacen Destino': almacen_destino,
-            'Puesto trabajo Origen': puesto_origen, 'Puesto de trabajo destino': puesto_destino_final,
-            'Cantidad Reposicion': cant_repo, 'Unidad Reposicion': unidad,
-            'Cantidad Punto de Pedido': cant_pp, 'Tiempo preparación abast. (en días)': dias_prep,
-            'Fecha Modificación': now, 'Usuario Modificación': usr
+            'N° Etiquetas': proximo_k_val, 
+            'Tipo Etiqueta': "KI" if es_interno else "KE",
+            'Tipo Kanban': tipo_soporte, 
+            'Medio': medio_str, 
+            'Material': material, 
+            'Centro': centro,
+            'Almacén Origen': almacen_origen, 
+            'Almacen Destino': almacen_destino,
+            'Puesto trabajo Origen': puesto_origen, 
+            'Puesto de trabajo destino': puesto_destino_final,
+            'Cantidad Reposicion': cant_repo, 
+            'Unidad Reposicion': unidad,
+            'Cantidad Punto de Pedido': cant_pp, 
+            'Tiempo preparación abast. (en días)': dias_prep,
+            'Fecha Modificación': now, 
+            'Usuario Modificación': usr
         }
         df_act = pd.concat([df_curr, pd.DataFrame([nuevo_reg])], ignore_index=True)
         with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:
