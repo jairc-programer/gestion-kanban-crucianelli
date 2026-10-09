@@ -24,11 +24,11 @@ if not st.session_state['usuario']:
             password = st.text_input("Contraseña:", type="password", key="log_pass")
             
             if st.button("Ingresar", type="primary", use_container_width=True):
-                usr, err = autenticar_usuario(email, password)
+                usr_data, err = autenticar_usuario(email, password)
                 if err:
                     st.toast(err, icon="❌")
                 else:
-                    st.session_state['usuario'] = {"email": usr.email, "rol": usr.rol.value}
+                    st.session_state['usuario'] = usr_data
                     st.toast(f"Bienvenido {usr.email}", icon="✅")
                     st.rerun()
 
