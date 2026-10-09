@@ -28,9 +28,14 @@ if not st.session_state['usuario']:
                 if err:
                     st.toast(err, icon="❌")
                 else:
-                    st.session_state['usuario'] = usr_data
-                    st.toast(f"Bienvenido {usr_data['email']}", icon="✅")
+                    # Guardamos la estructura en formato de diccionario estándar
+                    st.session_state['usuario'] = {
+                        "email": usr_data.email,
+                        "rol": usr_data.rol.value
+                    }
+                    st.toast(f"Bienvenido {usr_data.email}", icon="✅")
                     st.rerun()
+
         with tab_reg:
             reg_email = st.text_input("Correo Corporativo (@crucianelli.com):", key="reg_email").strip().lower()
             reg_pass1 = st.text_input("Contraseña:", type="password", key="reg_p1")
@@ -91,4 +96,3 @@ else: # Consulta
     ]
 
 pg = st.navigation(paginas)
-pg.run()
