@@ -14,6 +14,26 @@ SHEET_NAME = "Kanbans CRUCIANELLI"
 if os.path.exists(DB_FILE):
     df_live = pd.read_excel(DB_FILE, sheet_name=SHEET_NAME)
     
+    # --- CÁLCULO Y AGREGADO DE CAMPOS DINÁMICOS AL FINAL DE LA TABLA ---
+    def inferir_tipo_kanban(r):
+        try:
+            c_repo = float(r.get('Cantidad Reposicion', 0))
+            c_pp = float(r.get('Cantidad Punto de Pedido', 0))
+            return "GAVETA" if c_repo == c_pp and c_repo > 0 else "TARJETA"
+        except (ValueError, TypeError):
+            return "TARJETA"
+
+    if 'Tipo Kanban' not in df_live.columns:
+        df_live['Tipo Kanban'] = df_live.apply(inferir_tipo_kanban, axis=1)
+    else:
+        # Rellenar faltantes con la misma lógica
+        df_live['Tipo Kanban'] = df_live['Tipo Kanban'].fillna(df_live.apply(inferir_tipo_kanban, axis=1))
+
+    if 'Medio' not in df_live.columns:
+        df_live['Medio'] = "SIN MEDIO DEFINIDO"
+    else:
+        df_live['Medio'] = df_live['Medio'].fillna("SIN MEDIO DEFINIDO")
+
     # --- FILTROS DE BÚSQUEDA DINÁMICOS ---
     with st.container(border=True):
         st.markdown("##### 🔍 Filtros de Búsqueda")

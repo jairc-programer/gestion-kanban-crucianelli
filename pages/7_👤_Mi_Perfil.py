@@ -20,26 +20,26 @@ with st.container(border=True):
     with col2:
         st.markdown(f"**Rol Asignado:** `{usr_rol}`")
 
-# --- SECCIÓN EXCLUSIVA DE ADMINISTRADOR / SUPERUSUARIO ---
+# --- SECCIÓN EXCLUSIVA DE ADMINISTRADOR ---
 if usr_email.lower().strip() == "jairc@crucianelli.com":
     st.markdown("---")
-    st.markdown("### ⚙️ Administración del Sistema (Exclusivo)")
+    st.markdown("### ⚙️ Mantenimiento de Vista / Tracker (Exclusivo)")
     st.warning("⚠️ **Zona de Mantenimiento:** Esta sección solo es visible para tu usuario (`jairc@crucianelli.com`).")
     
-    with st.expander("🚨 Reiniciar Historial y Tracker (Borrar Pruebas)"):
-        st.write("Esta acción borrará de forma permanente:")
-        st.write("1. El registro del **Historial de Auditoría** (`historial_cambios.csv`).")
-        st.write("2. Todas las solicitudes del **Tracker Logístico** (`tracker_ejecucion.csv`).")
-        st.caption("Nota: La base de datos `TablaZ.xlsx` NO se verá afectada.")
+    with st.expander("🧹 Limpiar Vista de Tracker Logístico y Auditoría"):
+        st.write("Esta acción vacía la vista actual de:")
+        st.write("1. El **Historial de Auditoría** (`historial_cambios.csv`).")
+        st.write("2. Las tareas del **Tracker Logístico** (`tracker_ejecucion.csv`).")
+        st.info("ℹ️ **Importante:** Las modificaciones, datos creados y cambios en la base `TablaZ.xlsx` NO se borran ni se ven modificados.")
         
-        confirmacion = st.checkbox("Entiendo que esta acción no se puede deshacer", key="chk_reset_confirm")
+        confirmacion = st.checkbox("Entiendo que limpia la vista de tareas y auditoría", key="chk_reset_confirm")
         
-        if st.button("🔥 Reiniciar Registros de Prueba", type="primary", disabled=not confirmacion):
-            # 1. Vaciar o reiniciar historial_cambios.csv
+        if st.button("🧹 Limpiar Registros de Vista", type="primary", disabled=not confirmacion):
+            # 1. Vaciar historial de cambios
             df_log_clean = pd.DataFrame(columns=['Fecha y Hora', 'Usuario', 'Acción', 'Código K', 'Material', 'Detalle de Cambios'])
             df_log_clean.to_csv(LOG_FILE, index=False)
             
-            # 2. Vaciar o reiniciar tracker_ejecucion.csv
+            # 2. Vaciar tracker de ejecución
             df_trk_clean = pd.DataFrame(columns=[
                 'Fecha Solicitud', 'Usuario Solicitante', 'Tipo de Acción', 'Código K', 'Material',
                 'Almacén Origen', 'Puesto Destino', 'Detalle', 'Estado Logístico',
@@ -50,5 +50,5 @@ if usr_email.lower().strip() == "jairc@crucianelli.com":
             ])
             df_trk_clean.to_csv(TRACKER_FILE, index=False)
             
-            st.success("✅ Historial de Auditoría y Tracker Logístico reiniciados correctamente.")
+            st.success("✅ Vista de Auditoría y Tracker Logístico limpiada correctamente.")
             st.rerun()
