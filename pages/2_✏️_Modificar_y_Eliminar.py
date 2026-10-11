@@ -54,7 +54,7 @@ def registrar_tracker_logistica(fecha_hora, usuario, accion, codigo_k, material,
         'Material': material,
         'Almacén Origen': origen,
         'Puesto Destino': destino,
-        'Detalle / Observaciones': detalle,
+        'Detalle': detalle,
         'Estado Logístico': 'PENDIENTE',
         'Fecha Ejecución Logística': '-',
         'Usuario Logística': '-'
@@ -196,6 +196,39 @@ if os.path.exists(DB_FILE):
                         cant_pp_final = m_cant_repo if m_tipo_soporte == "GAVETA" else m_cant_pp
                         now_str = datetime.now(ARG_TZ).strftime("%Y-%m-%d %H:%M:%S")
                         
+                        # --- COMPARACIÓN Y DETECCIÓN DE CAMBIOS EXACTOS PARA LOGÍSTICA ---
+                        cambios_detectados = []
+                        
+                        if str(row.get('Centro', '')) != str(m_centro):
+                            cambios_detectados.append(f"Centro ({row.get('Centro')} ➔ {m_centro})")
+                        if str(row.get('Tipo Kanban', '')) != str(m_tipo_soporte):
+                            cambios_detectados.append(f"Tipo Kanban ({row.get('Tipo Kanban')} ➔ {m_tipo_soporte})")
+                        if str(row.get('Medio', '')) != str(m_medio_str):
+                            cambios_detectados.append(f"Medio ({row.get('Medio')} ➔ {m_medio_str})")
+                        if str(row.get('Almacén Origen', '')) != str(m_almacen_origen):
+                            cambios_detectados.append(f"Almacén Origen ({row.get('Almacén Origen')} ➔ {m_almacen_origen})")
+                        if str(row.get('Almacen Destino', '')) != str(m_almacen_destino):
+                            cambios_detectados.append(f"Almacén Destino ({row.get('Almacen Destino')} ➔ {m_almacen_destino})")
+                        if str(row.get('Puesto trabajo Origen', '')) != str(m_puesto_origen):
+                            cambios_detectados.append(f"Puesto Origen ({row.get('Puesto trabajo Origen')} ➔ {m_puesto_origen})")
+                        if str(row.get('Puesto de trabajo destino', '')) != str(m_puesto_destino):
+                            cambios_detectados.append(f"Puesto Destino ({row.get('Puesto de trabajo destino')} ➔ {m_puesto_destino})")
+                        try:
+                            if float(row.get('Cantidad Reposicion', 0)) != float(m_cant_repo):
+                                cambios_detectados.append(f"Cantidad Reposición ({row.get('Cantidad Reposicion')} ➔ {m_cant_repo})")
+                        except: pass
+                        try:
+                            if float(row.get('Cantidad Punto de Pedido', 0)) != float(cant_pp_final):
+                                cambios_detectados.append(f"Punto Pedido ({row.get('Cantidad Punto de Pedido')} ➔ {cant_pp_final})")
+                        except: pass
+                        if str(row.get('Unidad Reposicion', '')) != str(m_unidad):
+                            cambios_detectados.append(f"Unidad ({row.get('Unidad Reposicion')} ➔ {m_unidad})")
+                        if str(row.get('Tiempo preparación abast. (en días)', '')) != str(m_dias):
+                            cambios_detectados.append(f"Días Abastecimiento ({row.get('Tiempo preparación abast. (en días)')} ➔ {m_dias})")
+
+                        detalle_logistica = "MODIFICACIÓN: " + ", ".join(cambios_detectados) if cambios_detectados else "MODIFICACIÓN: Sin cambios significativos"
+                        
+                        # Actualizar Excel
                         df_live.loc[idx, 'Centro'] = m_centro
                         df_live.loc[idx, 'Tipo Etiqueta'] = "KI" if m_es_interno else "KE"
                         df_live.loc[idx, 'Tipo Kanban'] = m_tipo_soporte
@@ -214,12 +247,13 @@ if os.path.exists(DB_FILE):
                         with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:
                             df_live.to_excel(writer, sheet_name=SHEET_NAME, index=False)
                             
-                        det_str = f"Modificación: Reposición={m_cant_repo}, PP={cant_pp_final}, Destino={m_puesto_destino}"
+                        # 1. Auditoría: "MODIFICACIÓN"
+                        registrar_auditoria(now_str, usr_act, "MODIFICACIÓN", k_sel, mat_sel, "MODIFICACIÓN")
                         
-                        registrar_auditoria(now_str, usr_act, "MODIFICACIÓN", k_sel, mat_sel, det_str)
-                        registrar_tracker_logistica(now_str, usr_act, "MODIFICAR ETIQUETA", k_sel, mat_sel, m_almacen_origen, m_puesto_destino, det_str)
+                        # 2. Tracker Logístico: Detalle específico
+                        registrar_tracker_logistica(now_str, usr_act, "MODIFICAR ETIQUETA", k_sel, mat_sel, m_almacen_origen, m_puesto_destino, detalle_logistica)
                         
-                        st.success(f"✅ Kanban {k_sel} actualizado y registrado en Auditoría y Tracker Logístico.")
+                        st.success(f"✅ Kanban {k_sel} actualizado y registrado.")
                         st.rerun()
             else:
                 st.warning(f"No se encontraron Kanbans activos para: {busqueda}")
@@ -240,12 +274,13 @@ if os.path.exists(DB_FILE):
                 with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:
                     df_del.to_excel(writer, sheet_name=SHEET_NAME, index=False)
                     
-                det_del = f"Eliminación permanente de Kanban {k_del}"
+                # 1. Auditoría: "ELIMINACIÓN"
+                registrar_auditoria(now_str, usr_act, "ELIMINACIÓN", k_del, mat_del, "ELIMINACIÓN")
                 
-                registrar_auditoria(now_str, usr_act, "ELIMINACIÓN", k_del, mat_del, det_del)
-                registrar_tracker_logistica(now_str, usr_act, "RETIRAR KANBAN", k_del, mat_del, alm_o_del, p_d_del, det_del)
+                # 2. Tracker Logístico: "RETIRAR KANBAN"
+                registrar_tracker_logistica(now_str, usr_act, "RETIRAR KANBAN", k_del, mat_del, alm_o_del, p_d_del, "RETIRAR KANBAN")
                 
-                st.success(f"Código {k_del} eliminado y registrado en Auditoría y Tracker Logístico.")
+                st.success(f"Código {k_del} eliminado.")
                 st.rerun()
             else:
                 st.error("El Código K ingresado no existe.")

@@ -3,7 +3,7 @@ import pandas as pd
 import re, os
 from datetime import datetime
 
-# Manejo de Zona Horaria flexible (nativo zoneinfo o pytz como respaldo)
+# Manejo de Zona Horaria flexible
 try:
     from zoneinfo import ZoneInfo
     ARG_TZ = ZoneInfo('America/Argentina/Buenos_Aires')
@@ -52,7 +52,7 @@ def registrar_tracker_logistica(fecha_hora, usuario, accion, codigo_k, material,
         'Material': material,
         'Almacén Origen': origen,
         'Puesto Destino': destino,
-        'Detalle / Observaciones': detalle,
+        'Detalle': detalle,
         'Estado Logístico': 'PENDIENTE',
         'Fecha Ejecución Logística': '-',
         'Usuario Logística': '-'
@@ -136,13 +136,11 @@ if st.button("💾 Guardar y Crear Kanban", type="primary"):
         with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:
             df_act.to_excel(writer, sheet_name=SHEET_NAME, index=False)
             
-        det_str = f"Alta de Kanban: Tipo={tipo_etiqueta_val}, Soporte={tipo_soporte}, Reposición={cant_repo}, PP={cant_pp}, Destino={puesto_destino_final}"
+        # 1. Registrar en Auditoría
+        registrar_auditoria(now, usr, "ALTA KANBAN", proximo_k_val, material, "CREACIÓN")
         
-        # 1. Registrar evento en Auditoría (Página 6)
-        registrar_auditoria(now, usr, "ALTA KANBAN", proximo_k_val, material, det_str)
-        
-        # 2. Registrar tarea pendiente en Tracker Logístico (Página 4)
-        registrar_tracker_logistica(now, usr, "CREAR / IMPRIMIR ETIQUETA", proximo_k_val, material, almacen_origen, puesto_destino_final, det_str)
+        # 2. Registrar en Tracker Logístico
+        registrar_tracker_logistica(now, usr, "CREAR / IMPRIMIR ETIQUETA", proximo_k_val, material, almacen_origen, puesto_destino_final, "CREACIÓN")
         
         st.success(f"✅ Kanban {proximo_k_val} creado exitosamente y registrado en Auditoría y Tracker Logístico.")
         st.rerun()
