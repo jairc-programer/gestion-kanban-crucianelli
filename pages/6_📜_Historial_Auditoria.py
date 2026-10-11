@@ -8,8 +8,17 @@ if 'usuario' not in st.session_state or not st.session_state['usuario']:
 st.subheader("📜 Historial de Auditoría")
 
 LOG_FILE = "historial_cambios.csv"
+
 if os.path.exists(LOG_FILE):
-    df = pd.read_csv(LOG_FILE)
-    st.dataframe(df.sort_values(by=df.columns[0], ascending=False), use_container_width=True)
+    df_log = pd.read_csv(LOG_FILE)
+    
+    # Sanitizar campos nulos o sin formato
+    df_log = df_log.fillna('-')
+    
+    # Mostrar primero los cambios más recientes
+    if not df_log.empty:
+        df_log = df_log.iloc[::-1].reset_index(drop=True)
+        
+    st.dataframe(df_log, use_container_width=True)
 else:
-    st.info("Sin movimientos registrados en auditoría.")
+    st.info("Aún no se registraron movimientos en el historial de auditoría.")

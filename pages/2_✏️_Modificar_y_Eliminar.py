@@ -3,7 +3,6 @@ import pandas as pd
 import os, re
 from datetime import datetime
 
-# Manejo de Zona Horaria (zoneinfo nativo / pytz respaldo)
 try:
     from zoneinfo import ZoneInfo
     ARG_TZ = ZoneInfo('America/Argentina/Buenos_Aires')
@@ -54,10 +53,14 @@ def registrar_tracker_logistica(fecha_hora, usuario, accion, codigo_k, material,
         'Material': material,
         'Almacén Origen': origen,
         'Puesto Destino': destino,
-        'Detalle': detalle,
+        'Detalle / Observaciones': detalle,
         'Estado Logístico': 'PENDIENTE',
-        'Fecha Ejecución Logística': '-',
-        'Usuario Logística': '-'
+        'Estado SAP': 'PENDIENTE',
+        'Fecha SAP': '-',
+        'Usuario SAP': '-',
+        'Estado Fisico': 'PENDIENTE',
+        'Fecha Fisico': '-',
+        'Usuario Fisico': '-'
     }
     df_trk = pd.DataFrame([tracker_entry])
     if os.path.exists(TRACKER_FILE):
@@ -196,37 +199,36 @@ if os.path.exists(DB_FILE):
                         cant_pp_final = m_cant_repo if m_tipo_soporte == "GAVETA" else m_cant_pp
                         now_str = datetime.now(ARG_TZ).strftime("%Y-%m-%d %H:%M:%S")
                         
-                        # --- COMPARACIÓN Y DETECCIÓN DE CAMBIOS EXACTOS PARA LOGÍSTICA ---
-                        cambios_detectados = []
-                        
+                        # --- COMPARACIÓN DE CAMBIOS PRECISOS ---
+                        cambios = []
                         if str(row.get('Centro', '')) != str(m_centro):
-                            cambios_detectados.append(f"Centro ({row.get('Centro')} ➔ {m_centro})")
+                            cambios.append(f"Centro: {row.get('Centro')} ➔ {m_centro}")
                         if str(row.get('Tipo Kanban', '')) != str(m_tipo_soporte):
-                            cambios_detectados.append(f"Tipo Kanban ({row.get('Tipo Kanban')} ➔ {m_tipo_soporte})")
+                            cambios.append(f"Tipo: {row.get('Tipo Kanban')} ➔ {m_tipo_soporte}")
                         if str(row.get('Medio', '')) != str(m_medio_str):
-                            cambios_detectados.append(f"Medio ({row.get('Medio')} ➔ {m_medio_str})")
+                            cambios.append(f"Medio: {row.get('Medio')} ➔ {m_medio_str}")
                         if str(row.get('Almacén Origen', '')) != str(m_almacen_origen):
-                            cambios_detectados.append(f"Almacén Origen ({row.get('Almacén Origen')} ➔ {m_almacen_origen})")
+                            cambios.append(f"Almacén Origen: {row.get('Almacén Origen')} ➔ {m_almacen_origen}")
                         if str(row.get('Almacen Destino', '')) != str(m_almacen_destino):
-                            cambios_detectados.append(f"Almacén Destino ({row.get('Almacen Destino')} ➔ {m_almacen_destino})")
+                            cambios.append(f"Almacén Destino: {row.get('Almacen Destino')} ➔ {m_almacen_destino}")
                         if str(row.get('Puesto trabajo Origen', '')) != str(m_puesto_origen):
-                            cambios_detectados.append(f"Puesto Origen ({row.get('Puesto trabajo Origen')} ➔ {m_puesto_origen})")
+                            cambios.append(f"Puesto Origen: {row.get('Puesto trabajo Origen')} ➔ {m_puesto_origen}")
                         if str(row.get('Puesto de trabajo destino', '')) != str(m_puesto_destino):
-                            cambios_detectados.append(f"Puesto Destino ({row.get('Puesto de trabajo destino')} ➔ {m_puesto_destino})")
+                            cambios.append(f"Puesto Destino: {row.get('Puesto de trabajo destino')} ➔ {m_puesto_destino}")
                         try:
                             if float(row.get('Cantidad Reposicion', 0)) != float(m_cant_repo):
-                                cambios_detectados.append(f"Cantidad Reposición ({row.get('Cantidad Reposicion')} ➔ {m_cant_repo})")
+                                cambios.append(f"Reposición: {row.get('Cantidad Reposicion')} ➔ {m_cant_repo}")
                         except: pass
                         try:
                             if float(row.get('Cantidad Punto de Pedido', 0)) != float(cant_pp_final):
-                                cambios_detectados.append(f"Punto Pedido ({row.get('Cantidad Punto de Pedido')} ➔ {cant_pp_final})")
+                                cambios.append(f"Punto Pedido: {row.get('Cantidad Punto de Pedido')} ➔ {cant_pp_final}")
                         except: pass
                         if str(row.get('Unidad Reposicion', '')) != str(m_unidad):
-                            cambios_detectados.append(f"Unidad ({row.get('Unidad Reposicion')} ➔ {m_unidad})")
+                            cambios.append(f"Unidad: {row.get('Unidad Reposicion')} ➔ {m_unidad}")
                         if str(row.get('Tiempo preparación abast. (en días)', '')) != str(m_dias):
-                            cambios_detectados.append(f"Días Abastecimiento ({row.get('Tiempo preparación abast. (en días)')} ➔ {m_dias})")
+                            cambios.append(f"Días Abastecimiento: {row.get('Tiempo preparación abast. (en días)')} ➔ {m_dias}")
 
-                        detalle_logistica = "MODIFICACIÓN: " + ", ".join(cambios_detectados) if cambios_detectados else "MODIFICACIÓN: Sin cambios significativos"
+                        detalle_cambios_str = ", ".join(cambios) if cambios else "Sin cambios detectados"
                         
                         # Actualizar Excel
                         df_live.loc[idx, 'Centro'] = m_centro
@@ -247,13 +249,11 @@ if os.path.exists(DB_FILE):
                         with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:
                             df_live.to_excel(writer, sheet_name=SHEET_NAME, index=False)
                             
-                        # 1. Auditoría: "MODIFICACIÓN"
-                        registrar_auditoria(now_str, usr_act, "MODIFICACIÓN", k_sel, mat_sel, "MODIFICACIÓN")
+                        # Auditoría y Tracker con detalle de cambios exactos
+                        registrar_auditoria(now_str, usr_act, "MODIFICACIÓN", k_sel, mat_sel, detalle_cambios_str)
+                        registrar_tracker_logistica(now_str, usr_act, "MODIFICAR ETIQUETA", k_sel, mat_sel, m_almacen_origen, m_puesto_destino, detalle_cambios_str)
                         
-                        # 2. Tracker Logístico: Detalle específico
-                        registrar_tracker_logistica(now_str, usr_act, "MODIFICAR ETIQUETA", k_sel, mat_sel, m_almacen_origen, m_puesto_destino, detalle_logistica)
-                        
-                        st.success(f"✅ Kanban {k_sel} actualizado y registrado.")
+                        st.success(f"✅ Kanban {k_sel} actualizado exitosamente.")
                         st.rerun()
             else:
                 st.warning(f"No se encontraron Kanbans activos para: {busqueda}")
@@ -274,10 +274,7 @@ if os.path.exists(DB_FILE):
                 with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:
                     df_del.to_excel(writer, sheet_name=SHEET_NAME, index=False)
                     
-                # 1. Auditoría: "ELIMINACIÓN"
-                registrar_auditoria(now_str, usr_act, "ELIMINACIÓN", k_del, mat_del, "ELIMINACIÓN")
-                
-                # 2. Tracker Logístico: "RETIRAR KANBAN"
+                registrar_auditoria(now_str, usr_act, "ELIMINACIÓN", k_del, mat_del, "ELIMINACIÓN DE KANBAN")
                 registrar_tracker_logistica(now_str, usr_act, "RETIRAR KANBAN", k_del, mat_del, alm_o_del, p_d_del, "RETIRAR KANBAN")
                 
                 st.success(f"Código {k_del} eliminado.")
