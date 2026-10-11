@@ -54,6 +54,15 @@ def registrar_tracker_logistica(fecha_hora, usuario, accion, codigo_k, material,
         'Puesto Destino': destino,
         'Detalle': detalle,
         'Estado Logístico': 'PENDIENTE',
+        'Estado SAP': 'PENDIENTE',
+        'Fecha SAP': '-',
+        'Usuario SAP': '-',
+        'Estado Impresion': 'PENDIENTE',
+        'Fecha Impresion': '-',
+        'Usuario Impresion': '-',
+        'Estado Puesto': 'PENDIENTE',
+        'Fecha Puesto': '-',
+        'Usuario Puesto': '-',
         'Fecha Ejecución Logística': '-',
         'Usuario Logística': '-'
     }
@@ -75,6 +84,25 @@ def obtener_siguiente_codigo_k(df):
         i += 1
     return f"K{i:08d}"
 
+# Cargar catálogo de lotes de packaging
+def obtener_lote_packaging(mat_codigo):
+    if os.path.exists(PKG_FILE):
+        try:
+            df_pkg = pd.read_excel(PKG_FILE)
+            col_mat = [c for c in df_pkg.columns if 'material' in str(c).lower() or 'código' in str(c).lower()]
+            col_lote = [c for c in df_pkg.columns if 'lote' in str(c).lower() or 'cant' in str(c).lower() or 'pack' in str(c).lower()]
+            
+            c_m = col_mat[0] if col_mat else df_pkg.columns[0]
+            c_l = col_lote[0] if col_lote else df_pkg.columns[1]
+            
+            match = df_pkg[df_pkg[c_m].fillna('').astype(str).str.strip().str.upper() == mat_codigo.strip().upper()]
+            if not match.empty:
+                val = float(match.iloc[0][c_l])
+                return val if val > 0 else None
+        except Exception:
+            return None
+    return None
+
 st.subheader("➕ Alta de Nuevo Kanban")
 
 df_curr = pd.read_excel(DB_FILE, sheet_name=SHEET_NAME) if os.path.exists(DB_FILE) else pd.DataFrame()
@@ -86,6 +114,13 @@ col1, col2, col3 = st.columns(3)
 with col1:
     centro = st.text_input("Centro", value="A110")
     material = st.text_input("Código de Material (ej. PB005075)", max_chars=12).upper().strip()
+    
+    lote_pkg_std = obtener_lote_packaging(material) if material else None
+    if lote_pkg_std:
+        st.success(f"📦 Lote Packaging registrado para `{material}`: **{lote_pkg_std:.0f} UN**")
+    elif material:
+        st.caption("ℹ️ Sin lote de packaging prefijado en catálogo.")
+
     tipo_soporte = st.selectbox("Tipo de Kanban", ["GAVETA", "TARJETA"])
     medio_str = f"GAVETA {st.selectbox('Tamaño Gaveta', ['S', 'M', 'L', 'XL'])}" if tipo_soporte == "GAVETA" else st.selectbox("Medio Físico", ["SIN MEDIO DEFINIDO", "PALLET CHICO", "PALLET GRANDE", "CANASTO", "CAPACHO CHICO", "CAPACHO GRANDE", "RACK"])
 
@@ -98,17 +133,33 @@ with col2:
     puesto_destino_final = st.selectbox("Puesto de Trabajo Destino", opts_p_dest) if opts_p_dest else st.text_input("Puesto Destino").upper().strip()
 
 with col3:
-    cant_repo = st.number_input("Cantidad Reposición", min_value=0.0, step=1.0)
+    val_default_repo = float(lote_pkg_std) if lote_pkg_std else 0.0
+    cant_repo = st.number_input("Cantidad Reposición", min_value=0.0, value=val_default_repo, step=1.0)
     cant_pp = cant_repo if tipo_soporte == "GAVETA" else st.number_input("Cantidad Punto de Pedido", min_value=0.0, step=1.0)
     unidad = st.selectbox("Unidad Base", ["UN", "M", "L", "KG"])
     dias_prep = st.number_input("Días Abastecimiento", min_value=0, value=1)
 
 if st.button("💾 Guardar y Crear Kanban", type="primary"):
+    # Validaciones
+    es_valido = True
+    
     if not material or not puesto_destino_final:
         st.error("Material y Puesto Destino son obligatorios.")
+        es_valido = False
     elif tipo_soporte == "TARJETA" and float(cant_pp) >= float(cant_repo):
         st.error(f"NO SE PUDO CREAR: En Tipo TARJETA, Punto de Pedido ({cant_pp}) debe ser menor a Reposición ({cant_repo}).")
-    else:
+        es_valido = False
+        
+    # Validación de Lote de Packaging Mínimo y Múltiplo
+    if es_valido and lote_pkg_std:
+        if cant_repo < lote_pkg_std:
+            st.error(f"⛔ NO SE PUDO CREAR: La Cantidad de Reposición ({cant_repo:.0f}) no puede ser menor al Lote de Packaging estándar ({lote_pkg_std:.0f}).")
+            es_valido = False
+        elif (cant_repo % lote_pkg_std) != 0:
+            st.error(f"⛔ NO SE PUDO CREAR: La Cantidad de Reposición ({cant_repo:.0f}) debe ser un múltiplo del Lote de Packaging ({lote_pkg_std:.0f}). Ejemplos válidos: {lote_pkg_std*1:.0f}, {lote_pkg_std*2:.0f}, {lote_pkg_std*3:.0f}...")
+            es_valido = False
+
+    if es_valido:
         now = datetime.now(ARG_TZ).strftime("%Y-%m-%d %H:%M:%S")
         usr = st.session_state['usuario']['email']
         tipo_etiqueta_val = "KI" if es_interno else "KE"
@@ -136,11 +187,8 @@ if st.button("💾 Guardar y Crear Kanban", type="primary"):
         with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:
             df_act.to_excel(writer, sheet_name=SHEET_NAME, index=False)
             
-        # 1. Registrar en Auditoría
         registrar_auditoria(now, usr, "ALTA KANBAN", proximo_k_val, material, "CREACIÓN")
-        
-        # 2. Registrar en Tracker Logístico
         registrar_tracker_logistica(now, usr, "CREAR / IMPRIMIR ETIQUETA", proximo_k_val, material, almacen_origen, puesto_destino_final, "CREACIÓN")
         
-        st.success(f"✅ Kanban {proximo_k_val} creado exitosamente y registrado en Auditoría y Tracker Logístico.")
+        st.success(f"✅ Kanban {proximo_k_val} creado exitosamente.")
         st.rerun()
