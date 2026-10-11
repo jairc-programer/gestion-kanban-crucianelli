@@ -28,6 +28,41 @@ ALMACENES_PUESTOS = {
 }
 LISTA_ALMACENES = list(ALMACENES_PUESTOS.keys())
 
+def registrar_auditoria(fecha_hora, usuario, accion, codigo_k, material, detalle):
+    log_entry = {
+        'Fecha y Hora': fecha_hora,
+        'Usuario': usuario,
+        'Acción': accion,
+        'Código K': codigo_k,
+        'Material': material,
+        'Detalle de Cambios': detalle
+    }
+    df_log = pd.DataFrame([log_entry])
+    if os.path.exists(LOG_FILE):
+        df_log.to_csv(LOG_FILE, mode='a', header=False, index=False)
+    else:
+        df_log.to_csv(LOG_FILE, mode='w', header=True, index=False)
+
+def registrar_tracker_logistica(fecha_hora, usuario, accion, codigo_k, material, origen, destino, detalle):
+    tracker_entry = {
+        'Fecha Solicitud': fecha_hora,
+        'Usuario Solicitante': usuario,
+        'Tipo de Acción': accion,
+        'Código K': codigo_k,
+        'Material': material,
+        'Almacén Origen': origen,
+        'Puesto Destino': destino,
+        'Detalle / Observaciones': detalle,
+        'Estado Logístico': 'PENDIENTE',
+        'Fecha Ejecución Logística': '-',
+        'Usuario Logística': '-'
+    }
+    df_trk = pd.DataFrame([tracker_entry])
+    if os.path.exists(TRACKER_FILE):
+        df_trk.to_csv(TRACKER_FILE, mode='a', header=False, index=False)
+    else:
+        df_trk.to_csv(TRACKER_FILE, mode='w', header=True, index=False)
+
 def obtener_siguiente_codigo_k(df):
     if df.empty or 'N° Etiquetas' not in df.columns or df['N° Etiquetas'].dropna().empty: 
         return "K00000001"
@@ -71,12 +106,16 @@ with col3:
 if st.button("💾 Guardar y Crear Kanban", type="primary"):
     if not material or not puesto_destino_final:
         st.error("Material y Puesto Destino son obligatorios.")
+    elif tipo_soporte == "TARJETA" and float(cant_pp) >= float(cant_repo):
+        st.error(f"NO SE PUDO CREAR: En Tipo TARJETA, Punto de Pedido ({cant_pp}) debe ser menor a Reposición ({cant_repo}).")
     else:
         now = datetime.now(ARG_TZ).strftime("%Y-%m-%d %H:%M:%S")
         usr = st.session_state['usuario']['email']
+        tipo_etiqueta_val = "KI" if es_interno else "KE"
+        
         nuevo_reg = {
             'N° Etiquetas': proximo_k_val, 
-            'Tipo Etiqueta': "KI" if es_interno else "KE",
+            'Tipo Etiqueta': tipo_etiqueta_val,
             'Tipo Kanban': tipo_soporte, 
             'Medio': medio_str, 
             'Material': material, 
@@ -92,8 +131,18 @@ if st.button("💾 Guardar y Crear Kanban", type="primary"):
             'Fecha Modificación': now, 
             'Usuario Modificación': usr
         }
+        
         df_act = pd.concat([df_curr, pd.DataFrame([nuevo_reg])], ignore_index=True)
         with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:
             df_act.to_excel(writer, sheet_name=SHEET_NAME, index=False)
-        st.success(f"Kanban {proximo_k_val} creado exitosamente.")
+            
+        det_str = f"Alta de Kanban: Tipo={tipo_etiqueta_val}, Soporte={tipo_soporte}, Reposición={cant_repo}, PP={cant_pp}, Destino={puesto_destino_final}"
+        
+        # 1. Registrar evento en Auditoría (Página 6)
+        registrar_auditoria(now, usr, "ALTA KANBAN", proximo_k_val, material, det_str)
+        
+        # 2. Registrar tarea pendiente en Tracker Logístico (Página 4)
+        registrar_tracker_logistica(now, usr, "CREAR / IMPRIMIR ETIQUETA", proximo_k_val, material, almacen_origen, puesto_destino_final, det_str)
+        
+        st.success(f"✅ Kanban {proximo_k_val} creado exitosamente y registrado en Auditoría y Tracker Logístico.")
         st.rerun()

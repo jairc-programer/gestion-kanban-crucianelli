@@ -1,3 +1,4 @@
+Python
 import streamlit as st
 import pandas as pd
 import os, re
@@ -30,12 +31,46 @@ LISTA_ALMACENES = list(ALMACENES_PUESTOS.keys())
 OPCIONES_SOPORTE_TARJETA = ["SIN MEDIO DEFINIDO", "PALLET CHICO", "PALLET GRANDE", "CANASTO", "CAPACHO CHICO", "CAPACHO GRANDE", "RACK"]
 OPCIONES_GAVETA = ["S", "M", "L", "XL"]
 
+def registrar_auditoria(fecha_hora, usuario, accion, codigo_k, material, detalle):
+    log_entry = {
+        'Fecha y Hora': fecha_hora,
+        'Usuario': usuario,
+        'Acción': accion,
+        'Código K': codigo_k,
+        'Material': material,
+        'Detalle de Cambios': detalle
+    }
+    df_log = pd.DataFrame([log_entry])
+    if os.path.exists(LOG_FILE):
+        df_log.to_csv(LOG_FILE, mode='a', header=False, index=False)
+    else:
+        df_log.to_csv(LOG_FILE, mode='w', header=True, index=False)
+
+def registrar_tracker_logistica(fecha_hora, usuario, accion, codigo_k, material, origen, destino, detalle):
+    tracker_entry = {
+        'Fecha Solicitud': fecha_hora,
+        'Usuario Solicitante': usuario,
+        'Tipo de Acción': accion,
+        'Código K': codigo_k,
+        'Material': material,
+        'Almacén Origen': origen,
+        'Puesto Destino': destino,
+        'Detalle / Observaciones': detalle,
+        'Estado Logístico': 'PENDIENTE',
+        'Fecha Ejecución Logística': '-',
+        'Usuario Logística': '-'
+    }
+    df_trk = pd.DataFrame([tracker_entry])
+    if os.path.exists(TRACKER_FILE):
+        df_trk.to_csv(TRACKER_FILE, mode='a', header=False, index=False)
+    else:
+        df_trk.to_csv(TRACKER_FILE, mode='w', header=True, index=False)
+
 st.subheader("✏️ Modificar / 🗑️ Eliminar Kanban")
 
 if os.path.exists(DB_FILE):
     df_live = pd.read_excel(DB_FILE, sheet_name=SHEET_NAME)
     
-    # Asegurar existencia de columnas dinámicas o de seguridad
     if 'Tipo Kanban' not in df_live.columns:
         def inferir_tipo_kanban(r):
             try:
@@ -160,7 +195,9 @@ if os.path.exists(DB_FILE):
                         usr_act = st.session_state['usuario']['email']
                         idx = df_live[df_live['N° Etiquetas'] == k_sel].index[0]
                         cant_pp_final = m_cant_repo if m_tipo_soporte == "GAVETA" else m_cant_pp
+                        now_str = datetime.now(ARG_TZ).strftime("%Y-%m-%d %H:%M:%S")
                         
+                        # Actualizar base Excel
                         df_live.loc[idx, 'Centro'] = m_centro
                         df_live.loc[idx, 'Tipo Etiqueta'] = "KI" if m_es_interno else "KE"
                         df_live.loc[idx, 'Tipo Kanban'] = m_tipo_soporte
@@ -173,26 +210,50 @@ if os.path.exists(DB_FILE):
                         df_live.loc[idx, 'Cantidad Punto de Pedido'] = cant_pp_final
                         df_live.loc[idx, 'Unidad Reposicion'] = m_unidad
                         df_live.loc[idx, 'Tiempo preparación abast. (en días)'] = m_dias
-                        df_live.loc[idx, 'Fecha Modificación'] = datetime.now(ARG_TZ).strftime("%Y-%m-%d %H:%M:%S")
+                        df_live.loc[idx, 'Fecha Modificación'] = now_str
                         df_live.loc[idx, 'Usuario Modificación'] = usr_act
                         
                         with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:
                             df_live.to_excel(writer, sheet_name=SHEET_NAME, index=False)
                             
-                        st.success(f"✅ Kanban {k_sel} actualizado exitosamente.")
+                        det_str = f"Modificación: Reposición={m_cant_repo}, PP={cant_pp_final}, Destino={m_puesto_destino}"
+                        
+                        # 1. Registrar en Auditoría (Página 6)
+                        registrar_auditoria(now_str, usr_act, "MODIFICACIÓN", k_sel, mat_sel, det_str)
+                        
+                        # 2. Registrar en Tracker Logística (Página 4)
+                        registrar_tracker_logistica(now_str, usr_act, "MODIFICAR ETIQUETA", k_sel, mat_sel, m_almacen_origen, m_puesto_destino, det_str)
+                        
+                        st.success(f"✅ Kanban {k_sel} actualizado y registrado en Auditoría y Tracker Logístico.")
                         st.rerun()
             else:
                 st.warning(f"No se encontraron Kanbans activos para: {busqueda}")
 
     with col_right:
         st.markdown("##### 🗑️ Eliminar Kanban")
-        k_del = st.text_input("Código K a eliminar:", key="k_del_input")
+        k_del = st.text_input("Código K a eliminar:", key="k_del_input").strip().upper()
         if st.button("Eliminar Definitivamente", type="primary", key="btn_del") and k_del:
             if k_del in df_live['N° Etiquetas'].values:
+                usr_act = st.session_state['usuario']['email']
+                row_del = df_live[df_live['N° Etiquetas'] == k_del].iloc[0]
+                mat_del = str(row_del['Material'])
+                alm_o_del = str(row_del.get('Almacén Origen', '-'))
+                p_d_del = str(row_del.get('Puesto de trabajo destino', '-'))
+                now_str = datetime.now(ARG_TZ).strftime("%Y-%m-%d %H:%M:%S")
+                
                 df_del = df_live[df_live['N° Etiquetas'] != k_del]
                 with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:
                     df_del.to_excel(writer, sheet_name=SHEET_NAME, index=False)
-                st.success(f"Código {k_del} eliminado de la base.")
+                    
+                det_del = f"Eliminación permanente de Kanban {k_del}"
+                
+                # 1. Registrar en Auditoría (Página 6)
+                registrar_auditoria(now_str, usr_act, "ELIMINACIÓN", k_del, mat_del, det_del)
+                
+                # 2. Registrar en Tracker Logística (Página 4)
+                registrar_tracker_logistica(now_str, usr_act, "RETIRAR KANBAN", k_del, mat_del, alm_o_del, p_d_del, det_del)
+                
+                st.success(f"Código {k_del} eliminado y registrado en Auditoría y Tracker Logístico.")
                 st.rerun()
             else:
                 st.error("El Código K ingresado no existe.")
