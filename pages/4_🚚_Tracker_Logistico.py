@@ -18,7 +18,8 @@ st.subheader("🚚 Tracker de Ejecución Logística")
 TRACKER_FILE = "tracker_ejecucion.csv"
 
 if os.path.exists(TRACKER_FILE):
-    df_trk = pd.read_csv(TRACKER_FILE)
+    # Leer asegurando que todas las columnas sean tratadas como texto
+    df_trk = pd.read_csv(TRACKER_FILE, dtype=str)
     
     # Normalización y compatibilidad de columnas
     if 'Detalle / Observaciones' in df_trk.columns and 'Detalle' not in df_trk.columns:
@@ -35,6 +36,8 @@ if os.path.exists(TRACKER_FILE):
         'Estado Puesto': 'PENDIENTE',
         'Fecha Puesto': '-',
         'Usuario Puesto': '-',
+        'Fecha Ejecución Logística': '-',
+        'Usuario Logística': '-',
         'Detalle': 'Sin Detalle'
     }
     
@@ -43,6 +46,10 @@ if os.path.exists(TRACKER_FILE):
             df_trk[col] = default_val
         else:
             df_trk[col] = df_trk[col].fillna(default_val)
+            
+    # Forzar casteo a string para evitar errores de tipo al escribir fechas
+    for col in df_trk.columns:
+        df_trk[col] = df_trk[col].astype(str)
 
     # Filtro por Estado en interfaz
     estado_filter = st.radio("Filtrar por Estado:", ["TODOS", "PENDIENTES", "COMPLETADOS"], horizontal=True)
@@ -82,7 +89,6 @@ if os.path.exists(TRACKER_FILE):
             puesto_dest = str(row.get('Puesto Destino', '-'))
             est_log = str(row.get('Estado Logístico', 'PENDIENTE'))
             
-            # Badge visual del estado
             badge = "🔴" if est_log == "PENDIENTE" else ("🟡" if est_log == "EN PROCESO" else "🟢")
             
             with st.expander(f"{badge} [{action_type}] Código K: {k_code} | Material: {mat_code} | Destino: {puesto_dest} ({est_log})"):
@@ -113,28 +119,27 @@ if os.path.exists(TRACKER_FILE):
                     check_pst = st.checkbox("📍 Llevado al puesto de trabajo destino", value=pst_ok, key=f"pst_chk_{idx}")
                     
                     if check_sap != sap_ok or check_imp != imp_ok or check_pst != pst_ok:
-                        # Actualizar Check SAP
                         df_trk.loc[idx, 'Estado SAP'] = 'OK' if check_sap else 'PENDIENTE'
                         df_trk.loc[idx, 'Fecha SAP'] = now_str if check_sap else '-'
                         df_trk.loc[idx, 'Usuario SAP'] = usr_log if check_sap else '-'
                         
-                        # Actualizar Check Impresión
                         df_trk.loc[idx, 'Estado Impresion'] = 'OK' if check_imp else 'PENDIENTE'
                         df_trk.loc[idx, 'Fecha Impresion'] = now_str if check_imp else '-'
                         df_trk.loc[idx, 'Usuario Impresion'] = usr_log if check_imp else '-'
 
-                        # Actualizar Check Puesto
                         df_trk.loc[idx, 'Estado Puesto'] = 'OK' if check_pst else 'PENDIENTE'
                         df_trk.loc[idx, 'Fecha Puesto'] = now_str if check_pst else '-'
                         df_trk.loc[idx, 'Usuario Puesto'] = usr_log if check_pst else '-'
 
-                        # Recalcular Estado General
                         nuevo_est = obtener_estado_general(df_trk.loc[idx])
                         df_trk.loc[idx, 'Estado Logístico'] = nuevo_est
                         
                         if nuevo_est == "COMPLETADO":
                             df_trk.loc[idx, 'Fecha Ejecución Logística'] = now_str
                             df_trk.loc[idx, 'Usuario Logística'] = usr_log
+                        else:
+                            df_trk.loc[idx, 'Fecha Ejecución Logística'] = '-'
+                            df_trk.loc[idx, 'Usuario Logística'] = '-'
 
                         df_trk.to_csv(TRACKER_FILE, index=False)
                         st.toast(f"Estado actualizado a: {nuevo_est}", icon="💾")
