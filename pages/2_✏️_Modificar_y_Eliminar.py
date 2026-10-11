@@ -196,7 +196,6 @@ if os.path.exists(DB_FILE):
                         cant_pp_final = m_cant_repo if m_tipo_soporte == "GAVETA" else m_cant_pp
                         now_str = datetime.now(ARG_TZ).strftime("%Y-%m-%d %H:%M:%S")
                         
-                        # Actualizar base Excel
                         df_live.loc[idx, 'Centro'] = m_centro
                         df_live.loc[idx, 'Tipo Etiqueta'] = "KI" if m_es_interno else "KE"
                         df_live.loc[idx, 'Tipo Kanban'] = m_tipo_soporte
@@ -217,10 +216,7 @@ if os.path.exists(DB_FILE):
                             
                         det_str = f"Modificación: Reposición={m_cant_repo}, PP={cant_pp_final}, Destino={m_puesto_destino}"
                         
-                        # 1. Registrar en Auditoría (Página 6)
                         registrar_auditoria(now_str, usr_act, "MODIFICACIÓN", k_sel, mat_sel, det_str)
-                        
-                        # 2. Registrar en Tracker Logística (Página 4)
                         registrar_tracker_logistica(now_str, usr_act, "MODIFICAR ETIQUETA", k_sel, mat_sel, m_almacen_origen, m_puesto_destino, det_str)
                         
                         st.success(f"✅ Kanban {k_sel} actualizado y registrado en Auditoría y Tracker Logístico.")
@@ -246,10 +242,7 @@ if os.path.exists(DB_FILE):
                     
                 det_del = f"Eliminación permanente de Kanban {k_del}"
                 
-                # 1. Registrar en Auditoría (Página 6)
                 registrar_auditoria(now_str, usr_act, "ELIMINACIÓN", k_del, mat_del, det_del)
-                
-                # 2. Registrar en Tracker Logística (Página 4)
                 registrar_tracker_logistica(now_str, usr_act, "RETIRAR KANBAN", k_del, mat_del, alm_o_del, p_d_del, det_del)
                 
                 st.success(f"Código {k_del} eliminado y registrado en Auditoría y Tracker Logístico.")
