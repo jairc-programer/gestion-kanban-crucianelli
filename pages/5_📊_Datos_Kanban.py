@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
-import os, io
+import os
+import io
 
 if 'usuario' not in st.session_state or not st.session_state['usuario']:
     st.stop()
@@ -25,7 +26,7 @@ if os.path.exists(DB_FILE):
 
     df_filtrado = df_live.copy()
 
-    # Aplicar filtros progresivos si el usuario escribe
+    # Aplicar filtros progresivos
     if filtro_k and 'N° Etiquetas' in df_filtrado.columns:
         df_filtrado = df_filtrado[
             df_filtrado['N° Etiquetas'].fillna('').astype(str).str.upper().str.contains(filtro_k, na=False)
@@ -36,13 +37,11 @@ if os.path.exists(DB_FILE):
             df_filtrado['Material'].fillna('').astype(str).str.upper().str.contains(filtro_mat, na=False)
         ]
 
-    # Muestra de métrica según la búsqueda
     st.caption(f"Mostrando **{len(df_filtrado)}** de **{len(df_live)}** registros totales.")
     
-    # Mostrar tabla interactiva
     st.dataframe(df_filtrado, use_container_width=True)
     
-    # Exportación a Excel de los datos filtrados
+    # Exportación a Excel
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df_filtrado.to_excel(writer, sheet_name=SHEET_NAME, index=False)
@@ -55,4 +54,4 @@ if os.path.exists(DB_FILE):
         type="primary"
     )
 else:
-    st.error(f"No se encontró el archivo de base de datos {DB_FILE}.")ion/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    st.error(f"No se encontró el archivo de base de datos {DB_FILE}.")
