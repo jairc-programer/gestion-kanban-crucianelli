@@ -20,20 +20,21 @@ TRACKER_FILE = "tracker_ejecucion.csv"
 if os.path.exists(TRACKER_FILE):
     df_trk = pd.read_csv(TRACKER_FILE)
     
-    # Normalización y compatibilidad de nombres de columnas
+    # Normalización y compatibilidad de columnas
     if 'Detalle / Observaciones' in df_trk.columns and 'Detalle' not in df_trk.columns:
         df_trk['Detalle'] = df_trk['Detalle / Observaciones']
-    elif 'Detalle' in df_trk.columns and 'Detalle / Observaciones' not in df_trk.columns:
-        df_trk['Detalle / Observaciones'] = df_trk['Detalle']
 
     cols_defaults = {
         'Estado Logístico': 'PENDIENTE',
         'Estado SAP': 'PENDIENTE',
         'Fecha SAP': '-',
         'Usuario SAP': '-',
-        'Estado Fisico': 'PENDIENTE',
-        'Fecha Fisico': '-',
-        'Usuario Fisico': '-',
+        'Estado Impresion': 'PENDIENTE',
+        'Fecha Impresion': '-',
+        'Usuario Impresion': '-',
+        'Estado Puesto': 'PENDIENTE',
+        'Fecha Puesto': '-',
+        'Usuario Puesto': '-',
         'Detalle': 'Sin Detalle'
     }
     
@@ -43,18 +44,29 @@ if os.path.exists(TRACKER_FILE):
         else:
             df_trk[col] = df_trk[col].fillna(default_val)
 
-    # Filtro por Estado
+    # Filtro por Estado en interfaz
     estado_filter = st.radio("Filtrar por Estado:", ["TODOS", "PENDIENTES", "COMPLETADOS"], horizontal=True)
     
-    def es_pendiente(r):
-        s_sap = str(r.get('Estado SAP', '')).strip().upper()
-        s_fis = str(r.get('Estado Fisico', '')).strip().upper()
-        return s_sap != 'OK' or s_fis != 'OK'
+    def obtener_estado_general(r):
+        s_sap = str(r.get('Estado SAP', '')).strip().upper() == 'OK'
+        s_imp = str(r.get('Estado Impresion', '')).strip().upper() == 'OK'
+        s_pst = str(r.get('Estado Puesto', '')).strip().upper() == 'OK'
+        
+        count = sum([s_sap, s_imp, s_pst])
+        if count == 3:
+            return "COMPLETADO"
+        elif count > 0:
+            return "EN PROCESO"
+        else:
+            return "PENDIENTE"
+
+    # Actualizar columna dinámica
+    df_trk['Estado Logístico'] = df_trk.apply(obtener_estado_general, axis=1)
 
     if estado_filter == "PENDIENTES":
-        df_show = df_trk[df_trk.apply(es_pendiente, axis=1)]
+        df_show = df_trk[df_trk['Estado Logístico'].isin(['PENDIENTE', 'EN PROCESO'])]
     elif estado_filter == "COMPLETADOS":
-        df_show = df_trk[~df_trk.apply(es_pendiente, axis=1)]
+        df_show = df_trk[df_trk['Estado Logístico'] == 'COMPLETADO']
     else:
         df_show = df_trk.copy()
 
@@ -68,15 +80,18 @@ if os.path.exists(TRACKER_FILE):
             mat_code = str(row.get('Material', '-'))
             action_type = str(row.get('Tipo de Acción', 'ACCIÓN'))
             puesto_dest = str(row.get('Puesto Destino', '-'))
+            est_log = str(row.get('Estado Logístico', 'PENDIENTE'))
             
-            with st.expander(f"📦 [{action_type}] Código K: {k_code} | Material: {mat_code} | Puesto Destino: {puesto_dest}"):
+            # Badge visual del estado
+            badge = "🔴" if est_log == "PENDIENTE" else ("🟡" if est_log == "EN PROCESO" else "🟢")
+            
+            with st.expander(f"{badge} [{action_type}] Código K: {k_code} | Material: {mat_code} | Destino: {puesto_dest} ({est_log})"):
                 col1, col2 = st.columns([2, 1])
                 
                 with col1:
                     st.write(f"**Fecha Solicitud:** `{row.get('Fecha Solicitud')}`")
                     st.write(f"**Solicitante:** `{row.get('Usuario Solicitante')}`")
                     
-                    # Detalle explicativo exacto de la modificación
                     det_val = str(row.get('Detalle', row.get('Detalle / Observaciones', '-')))
                     st.markdown(f"**Detalle de Cambios:** `{det_val}`")
                     st.write(f"**Ubicación:** Origen `{row.get('Almacén Origen')}` ➔ Destino `{puesto_dest}`")
@@ -85,33 +100,47 @@ if os.path.exists(TRACKER_FILE):
                     usr_log = st.session_state['usuario']['email']
                     now_str = datetime.now(ARG_TZ).strftime("%Y-%m-%d %H:%M:%S")
                     
+                    # 1. Check SAP
                     sap_ok = (str(row.get('Estado SAP')).upper() == 'OK')
-                    check_sap = st.checkbox("✅ Carga en SAP realizada", value=sap_ok, key=f"sap_chk_{idx}")
+                    check_sap = st.checkbox("💻 Carga en Sistema SAP realizada", value=sap_ok, key=f"sap_chk_{idx}")
                     
-                    fisico_ok = (str(row.get('Estado Fisico')).upper() == 'OK')
-                    check_fisico = st.checkbox("🏷️ Cambio Físico / Etiqueta colocada", value=fisico_ok, key=f"fis_chk_{idx}")
+                    # 2. Check Impresión / Etiqueta
+                    imp_ok = (str(row.get('Estado Impresion')).upper() == 'OK')
+                    check_imp = st.checkbox("🖨️ Impresión y etiqueta pegada", value=imp_ok, key=f"imp_chk_{idx}")
+
+                    # 3. Check Llevado a Puesto Destino
+                    pst_ok = (str(row.get('Estado Puesto')).upper() == 'OK')
+                    check_pst = st.checkbox("📍 Llevado al puesto de trabajo destino", value=pst_ok, key=f"pst_chk_{idx}")
                     
-                    if check_sap != sap_ok or check_fisico != fisico_ok:
+                    if check_sap != sap_ok or check_imp != imp_ok or check_pst != pst_ok:
+                        # Actualizar Check SAP
                         df_trk.loc[idx, 'Estado SAP'] = 'OK' if check_sap else 'PENDIENTE'
                         df_trk.loc[idx, 'Fecha SAP'] = now_str if check_sap else '-'
                         df_trk.loc[idx, 'Usuario SAP'] = usr_log if check_sap else '-'
                         
-                        df_trk.loc[idx, 'Estado Fisico'] = 'OK' if check_fisico else 'PENDIENTE'
-                        df_trk.loc[idx, 'Fecha Fisico'] = now_str if check_fisico else '-'
-                        df_trk.loc[idx, 'Usuario Fisico'] = usr_log if check_fisico else '-'
+                        # Actualizar Check Impresión
+                        df_trk.loc[idx, 'Estado Impresion'] = 'OK' if check_imp else 'PENDIENTE'
+                        df_trk.loc[idx, 'Fecha Impresion'] = now_str if check_imp else '-'
+                        df_trk.loc[idx, 'Usuario Impresion'] = usr_log if check_imp else '-'
+
+                        # Actualizar Check Puesto
+                        df_trk.loc[idx, 'Estado Puesto'] = 'OK' if check_pst else 'PENDIENTE'
+                        df_trk.loc[idx, 'Fecha Puesto'] = now_str if check_pst else '-'
+                        df_trk.loc[idx, 'Usuario Puesto'] = usr_log if check_pst else '-'
+
+                        # Recalcular Estado General
+                        nuevo_est = obtener_estado_general(df_trk.loc[idx])
+                        df_trk.loc[idx, 'Estado Logístico'] = nuevo_est
                         
-                        if check_sap and check_fisico:
-                            df_trk.loc[idx, 'Estado Logístico'] = 'COMPLETADO'
+                        if nuevo_est == "COMPLETADO":
                             df_trk.loc[idx, 'Fecha Ejecución Logística'] = now_str
                             df_trk.loc[idx, 'Usuario Logística'] = usr_log
-                        else:
-                            df_trk.loc[idx, 'Estado Logístico'] = 'PENDIENTE'
 
                         df_trk.to_csv(TRACKER_FILE, index=False)
-                        st.toast("Estado logístico actualizado.", icon="💾")
+                        st.toast(f"Estado actualizado a: {nuevo_est}", icon="💾")
                         st.rerun()
 
-                st.caption(f"Status SAP: {df_trk.loc[idx, 'Estado SAP']} ({df_trk.loc[idx, 'Fecha SAP']}) | Status Físico: {df_trk.loc[idx, 'Estado Fisico']} ({df_trk.loc[idx, 'Fecha Fisico']})")
+                st.caption(f"SAP: {df_trk.loc[idx, 'Estado SAP']} | Impresión: {df_trk.loc[idx, 'Estado Impresion']} | En Puesto: {df_trk.loc[idx, 'Estado Puesto']}")
 
     st.markdown("---")
     st.dataframe(df_show, use_container_width=True)
