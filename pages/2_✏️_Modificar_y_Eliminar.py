@@ -35,6 +35,20 @@ st.subheader("✏️ Modificar / 🗑️ Eliminar Kanban")
 if os.path.exists(DB_FILE):
     df_live = pd.read_excel(DB_FILE, sheet_name=SHEET_NAME)
     
+    # Asegurar existencia de columnas dinámicas o de seguridad
+    if 'Tipo Kanban' not in df_live.columns:
+        def inferir_tipo_kanban(r):
+            try:
+                c_repo = float(r.get('Cantidad Reposicion', 0))
+                c_pp = float(r.get('Cantidad Punto de Pedido', 0))
+                return "GAVETA" if c_repo == c_pp and c_repo > 0 else "TARJETA"
+            except (ValueError, TypeError):
+                return "TARJETA"
+        df_live['Tipo Kanban'] = df_live.apply(inferir_tipo_kanban, axis=1)
+
+    if 'Medio' not in df_live.columns:
+        df_live['Medio'] = "SIN MEDIO DEFINIDO"
+
     col_left, col_right = st.columns([2, 1])
     
     with col_left:
@@ -65,11 +79,11 @@ if os.path.exists(DB_FILE):
                 with m_c1:
                     m_centro = st.text_input("Centro", value=str(row['Centro'] if pd.notna(row['Centro']) else "A110"), key=f"m_c_{k_sel}")
                     
-                    tipo_kb_row = str(row['Tipo Kanban']).upper() if pd.notna(row['Tipo Kanban']) else "TARJETA"
+                    tipo_kb_row = str(row.get('Tipo Kanban', 'TARJETA')).upper()
                     idx_soporte = 0 if "GAVETA" in tipo_kb_row else 1
                     m_tipo_soporte = st.selectbox("Tipo de Kanban", ["GAVETA", "TARJETA"], index=idx_soporte, key=f"m_sop_{k_sel}")
                     
-                    medio_row = str(row['Medio']).strip() if pd.notna(row['Medio']) else ""
+                    medio_row = str(row.get('Medio', '')).strip() if pd.notna(row.get('Medio')) else ""
                     if m_tipo_soporte == "GAVETA":
                         tam_ext = medio_row.replace("GAVETA", "").strip()
                         idx_tam = OPCIONES_GAVETA.index(tam_ext) if tam_ext in OPCIONES_GAVETA else 0
