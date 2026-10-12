@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import os
+from datetime import datetime
 
 if 'usuario' not in st.session_state or not st.session_state['usuario']:
     st.stop()
@@ -36,7 +37,7 @@ if os.path.exists(DB_FILE):
     total_gaveta = len(df_kb[df_kb['Tipo Kanban'] == "GAVETA"])
     total_tarjeta = len(df_kb[df_kb['Tipo Kanban'] == "TARJETA"])
 
-    m1, m2, m3, m4 = st.columns(4)
+    m1, m2, m3 = st.columns(3)
     m1.metric("📦 Total Kanbans Activos", total_kanbans)
     m2.metric("📥 Total Gavetas", total_gaveta)
     m3.metric("🏷️ Total Tarjetas", total_tarjeta)
@@ -71,7 +72,7 @@ if os.path.exists(DB_FILE):
             y='Cantidad', 
             text='Cantidad',
             color='Almacén',
-            color_discrete_sequence=px.colors.qualitative.Blues_r
+            color_discrete_sequence=px.colors.sequential.Blues_r
         )
         fig_alm.update_traces(textposition='outside')
         fig_alm.update_layout(margin=dict(t=20, b=20, l=10, r=10), showlegend=False, height=320)
