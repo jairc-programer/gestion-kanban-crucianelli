@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
+import plotly.graph_objects as go
 import os
 from datetime import datetime
 
@@ -18,7 +19,6 @@ TRACKER_FILE = "tracker_ejecucion.csv"
 if os.path.exists(DB_FILE):
     df_kb = pd.read_excel(DB_FILE, sheet_name=SHEET_NAME)
     
-    # Inferir Tipo Kanban si no existe
     def inferir_tipo(r):
         try:
             c_repo = float(r.get('Cantidad Reposicion', 0))
@@ -99,75 +99,111 @@ if os.path.exists(DB_FILE):
 else:
     st.error(f"No se encontró el archivo de datos {DB_FILE}")
 
-# --- 2. ANÁLISIS DE TIEMPOS Y LEAD TIME LOGÍSTICO ---
+# --- 2. EVOLUCIÓN TEMPORAL DE TIEMPOS DE RESPUESTA LOGÍSTICA ---
 st.markdown("---")
 st.markdown("### ⏱️ Tiempos de Respuesta de Ejecución Logística")
 
 if os.path.exists(TRACKER_FILE):
     df_trk = pd.read_csv(TRACKER_FILE, dtype=str)
     
-    # Calcular horas transcurridas
-    def calcular_horas(row, col_fin):
-        f_sol = row.get('Fecha Solicitud')
-        f_ej = row.get(col_fin)
-        if pd.notna(f_sol) and pd.notna(f_ej) and f_sol != '-' and f_ej != '-':
-            try:
-                dt_sol = datetime.strptime(f_sol, "%Y-%m-%d %H:%M:%S")
-                dt_ej = datetime.strptime(f_ej, "%Y-%m-%d %H:%M:%S")
-                diff = (dt_ej - dt_sol).total_seconds() / 3600.0
-                return round(max(diff, 0.01), 2)
-            except Exception:
-                return np.nan
+    def parse_dt(val):
+        if pd.isna(val) or str(val).strip() in ['-', '', 'nan', 'None']:
+            return None
+        try:
+            return datetime.strptime(str(val).strip(), "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            return None
+
+    df_trk['dt_solicitud'] = df_trk['Fecha Solicitud'].apply(parse_dt)
+    df_trk['dt_sap'] = df_trk['Fecha SAP'].apply(parse_dt)
+    df_trk['dt_imp'] = df_trk['Fecha Impresion'].apply(parse_dt)
+    df_trk['dt_pst'] = df_trk['Fecha Puesto'].apply(parse_dt)
+
+    # Cálculo de diferencias en días / horas
+    def diff_dias(dt1, dt2):
+        if dt1 and dt2 and dt2 >= dt1:
+            return round((dt2 - dt1).total_seconds() / 86400.0, 2)
         return np.nan
 
-    df_trk['Horas SAP'] = df_trk.apply(lambda r: calcular_horas(r, 'Fecha SAP'), axis=1)
-    df_trk['Horas Impresión'] = df_trk.apply(lambda r: calcular_horas(r, 'Fecha Impresion'), axis=1)
-    df_trk['Horas Puesto'] = df_trk.apply(lambda r: calcular_horas(r, 'Fecha Puesto'), axis=1)
+    def diff_horas(dt1, dt2):
+        if dt1 and dt2 and dt2 >= dt1:
+            return round((dt2 - dt1).total_seconds() / 3600.0, 2)
+        return np.nan
 
-    t_sap_avg = df_trk['Horas SAP'].mean()
-    t_imp_avg = df_trk['Horas Impresión'].mean()
-    t_pst_avg = df_trk['Horas Puesto'].mean()
+    df_trk['Dias_SAP'] = df_trk.apply(lambda r: diff_dias(r['dt_solicitud'], r['dt_sap']), axis=1)
+    df_trk['Dias_Imp'] = df_trk.apply(lambda r: diff_dias(r['dt_solicitud'], r['dt_imp']), axis=1)
+    df_trk['Dias_Total'] = df_trk.apply(lambda r: diff_dias(r['dt_solicitud'], r['dt_pst']), axis=1)
 
-    col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
-    col_kpi1.metric("💻 Promedio Carga SAP", f"{t_sap_avg:.1f} hs" if pd.notna(t_sap_avg) else "Sin datos")
-    col_kpi2.metric("🖨️ Promedio Impresión/Etiqueta", f"{t_imp_avg:.1f} hs" if pd.notna(t_imp_avg) else "Sin datos")
-    col_kpi3.metric("📍 Promedio Llevado a Puesto", f"{t_pst_avg:.1f} hs" if pd.notna(t_pst_avg) else "Sin datos")
+    df_trk['Horas_SAP'] = df_trk.apply(lambda r: diff_horas(r['dt_solicitud'], r['dt_sap']), axis=1)
+    df_trk['Horas_Imp'] = df_trk.apply(lambda r: diff_horas(r['dt_solicitud'], r['dt_imp']), axis=1)
+    df_trk['Horas_Pst'] = df_trk.apply(lambda r: diff_horas(r['dt_solicitud'], r['dt_pst']), axis=1)
 
-    # Unificar tiempos finalizados para el histograma
-    tiempos_data = []
-    for idx, r in df_trk.iterrows():
-        if pd.notna(r['Horas SAP']):
-            tiempos_data.append({'Etapa': 'Carga en SAP', 'Horas': r['Horas SAP'], 'Código K': r.get('Código K')})
-        if pd.notna(r['Horas Impresión']):
-            tiempos_data.append({'Etapa': 'Impresión / Etiqueta', 'Horas': r['Horas Impresión'], 'Código K': r.get('Código K')})
-        if pd.notna(r['Horas Puesto']):
-            tiempos_data.append({'Etapa': 'Llevado a Puesto Destino', 'Horas': r['Horas Puesto'], 'Código K': r.get('Código K')})
+    # Tarjetas Promedio
+    avg_sap_h = df_trk['Horas_SAP'].dropna().mean()
+    avg_imp_h = df_trk['Horas_Imp'].dropna().mean()
+    avg_pst_h = df_trk['Horas_Pst'].dropna().mean()
 
-    df_tiempos = pd.DataFrame(tiempos_data)
+    col_k1, col_k2, col_k3 = st.columns(3)
+    col_k1.metric("💻 Promedio Carga SAP", f"{avg_sap_h:.1f} hs" if pd.notna(avg_sap_h) else "Sin datos")
+    col_k2.metric("🖨️ Promedio Impresión/Etiqueta", f"{avg_imp_h:.1f} hs" if pd.notna(avg_imp_h) else "Sin datos")
+    col_k3.metric("📍 Promedio Llevado a Puesto", f"{avg_pst_h:.1f} hs" if pd.notna(avg_pst_h) else "Sin datos")
 
-    if not df_tiempos.empty:
-        st.markdown("##### 📊 Histograma de Distribución de Tiempos de Respuesta (en Horas)")
-        fig_hist = px.histogram(
-            df_tiempos, 
-            x="Horas", 
-            color="Etapa", 
-            barmode="overlay",
-            nbins=20,
-            opacity=0.75,
-            color_discrete_map={
-                'Carga en SAP': '#1f77b4',
-                'Impresión / Etiqueta': '#ff7f0e',
-                'Llevado a Puesto Destino': '#2ca02c'
-            }
-        )
-        fig_hist.update_layout(
-            xaxis_title="Tiempo Transcurrido (Horas)", 
-            yaxis_title="Cantidad de Tareas",
-            margin=dict(t=20, b=20, l=10, r=10),
+    # Agrupar por Fecha de Solicitud (Día / Mes)
+    df_trk_valid = df_trk.dropna(subset=['dt_solicitud']).copy()
+    
+    if not df_trk_valid.empty:
+        df_trk_valid['Fecha_Dia'] = df_trk_valid['dt_solicitud'].dt.strftime('%Y-%m-%d')
+        
+        df_group = df_trk_valid.groupby('Fecha_Dia').agg(
+            Dias_Total=('Dias_Total', 'mean'),
+            Dias_SAP=('Dias_SAP', 'mean'),
+            Dias_Imp=('Dias_Imp', 'mean')
+        ).reset_index()
+
+        st.markdown("##### 📈 Evolución Temporal de Tiempos de Respuesta (en Días / Horas)")
+        
+        fig_line = go.Figure()
+        
+        # Línea 1: Días Totales de Resolución
+        fig_line.add_trace(go.Scatter(
+            x=df_group['Fecha_Dia'],
+            y=df_group['Dias_Total'],
+            mode='lines+markers',
+            name='Días Totales de Resolución',
+            line=dict(color='#4285F4', width=3, shape='spline'),
+            marker=dict(size=8)
+        ))
+
+        # Línea 2: Días Carga / Impresión
+        fig_line.add_trace(go.Scatter(
+            x=df_group['Fecha_Dia'],
+            y=df_group['Dias_Imp'],
+            mode='lines+markers',
+            name='Días Carga a Impresión',
+            line=dict(color='#F2994A', width=3, shape='spline'),
+            marker=dict(size=8)
+        ))
+
+        # Línea 3: Días Entrega en Puesto
+        fig_line.add_trace(go.Scatter(
+            x=df_group['Fecha_Dia'],
+            y=df_group['Dias_SAP'],
+            mode='lines+markers',
+            name='Días Carga en SAP',
+            line=dict(color='#BB6BD9', width=3, shape='spline'),
+            marker=dict(size=8)
+        ))
+
+        fig_line.update_layout(
+            xaxis_title="Fecha de Solicitud",
+            yaxis_title="Días Transcurridos",
+            hovermode="x unified",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+            margin=dict(t=30, b=20, l=10, r=10),
             height=380
         )
-        st.plotly_chart(fig_hist, use_container_width=True)
+        st.plotly_chart(fig_line, use_container_width=True)
     else:
-        st.info("💡 A medida que el equipo de Logística complete los checks en el Tracker, se generarán aquí las métricas y gráficos de tiempo de respuesta.")
+        st.info("💡 A medida que Logística complete las tareas en el Tracker, se trazará aquí el gráfico evolutivo de tiempos de respuesta.")
 else:
-    st.info("Aún no hay registros en el Tracker Logístico para analizar tiempos de respuesta.")
+    st.info("Aún no hay registros en el Tracker Logístico para mostrar tendencias temporales.")
