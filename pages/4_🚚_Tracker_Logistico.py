@@ -3,6 +3,8 @@ import pandas as pd
 import os
 import urllib.parse
 from datetime import datetime
+import streamlit.components.v1 as components
+from utils.printer import enviar_a_impresora_brother
 
 try:
     from zoneinfo import ZoneInfo
@@ -15,6 +17,11 @@ if 'usuario' not in st.session_state or not st.session_state['usuario']:
     st.stop()
 
 st.subheader("🚚 Tracker de Ejecución Logística")
+
+# Configuración de IP de la rotuladora Brother en la barra lateral o sección
+with st.sidebar:
+    st.markdown("### 🖨️ Configuración Impresora")
+    printer_ip = st.text_input("IP Rotuladora Brother (Wi-Fi):", value="192.168.1.150", help="Dirección IP asignada a la Brother QL-1110NWB en la red de la planta.")
 
 TRACKER_FILE = "tracker_ejecucion.csv"
 
@@ -97,21 +104,51 @@ if os.path.exists(TRACKER_FILE):
                     st.markdown(f"**Detalle de Cambios:** `{det_val}`")
                     st.write(f"**Ubicación:** Origen `{row.get('Almacén Origen')}` ➔ Destino `{puesto_dest}`")
                     
-                    # --- GENERADOR DE TARJETA Y CÓDIGO QR ---
-                    with st.popover("🖨️ Ver / Imprimir Etiqueta Kanban"):
+                    # --- POPUP CON OPCIONES DE IMPRESIÓN ---
+                    with st.popover("🖨️ Imprimir Etiqueta Kanban"):
                         st.markdown("### 🏷️ Tarjeta Kanban Crucianelli")
                         qr_data = f"KANBAN|{k_code}|MAT:{mat_code}|DEST:{puesto_dest}"
-                        qr_url = f"https://quickchart.io/qr?text={urllib.parse.quote(qr_data)}&size=150"
+                        qr_url = f"https://quickchart.io/qr?text={urllib.parse.quote(qr_data)}&size=160"
                         
-                        col_card1, col_card2 = st.columns([2, 1])
-                        with col_card1:
-                            st.markdown(f"**Código K:** `{k_code}`")
-                            st.markdown(f"**Material:** `{mat_code}`")
-                            st.markdown(f"**Origen:** {row.get('Almacén Origen')} | **Destino:** {puesto_dest}")
-                            st.caption(f"Solicitud: {row.get('Fecha Solicitud')}")
-                        with col_card2:
-                            st.image(qr_url, caption=f"QR {k_code}", width=120)
-                
+                        # Vista previa de etiqueta
+                        st.image(qr_url, caption=f"QR {k_code}", width=130)
+                        
+                        # 1. Botón para enviar por Red Wi-Fi (Socket direct a IP)
+                        if st.button("⚡ Imprimir por Red Wi-Fi (IP Brother)", key=f"btn_ip_{idx}", type="primary"):
+                            exito, msg = enviar_a_impresora_brother(
+                                printer_ip, k_code, mat_code, row.get('Almacén Origen'), puesto_dest, qr_data
+                            )
+                            if exito:
+                                st.success(msg)
+                            else:
+                                st.warning(f"{msg} Utilice el botón alternativo de diálogo de impresión.")
+
+                        # 2. Botón alternativo de impresión del navegador
+                        btn_print_html = f"""
+                        <script>
+                        function imprimirEtiqueta_{idx}() {{
+                            var contenido = `
+                            <div style="width: 103mm; border: 2px solid #000; padding: 10px; font-family: Arial; background: #fff; color: #000;">
+                                <h3>CRUCIANELLI KANBAN - {k_code}</h3>
+                                <p><strong>Material:</strong> {mat_code}</p>
+                                <p><strong>Origen:</strong> {row.get('Almacén Origen')} | <strong>Destino:</strong> {puesto_dest}</p>
+                                <img src="{qr_url}" style="width: 100px;">
+                            </div>`;
+                            var ventana = window.open('', '', 'height=500,width=600');
+                            ventana.document.write('<html><head><style>@page {{ size: 103mm auto; margin: 0; }}</style></head><body>');
+                            ventana.document.write(contenido);
+                            ventana.document.write('</body></html>');
+                            ventana.document.close();
+                            ventana.focus();
+                            setTimeout(function() {{ ventana.print(); ventana.close(); }}, 500);
+                        }}
+                        </script>
+                        <button onclick="imprimirEtiqueta_{idx}()" style="background-color: #555; color: white; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; margin-top: 5px; width: 100%;">
+                            🌐 Imprimir vía Diálogo de Navegador
+                        </button>
+                        """
+                        components.html(btn_print_html, height=45)
+
                 with col2:
                     usr_log = st.session_state['usuario']['email']
                     now_str = datetime.now(ARG_TZ).strftime("%Y-%m-%d %H:%M:%S")
