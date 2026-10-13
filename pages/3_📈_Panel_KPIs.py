@@ -4,7 +4,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 if 'usuario' not in st.session_state or not st.session_state['usuario']:
     st.stop()
@@ -32,7 +32,6 @@ if os.path.exists(DB_FILE):
     else:
         df_kb['Tipo Kanban'] = df_kb['Tipo Kanban'].fillna(df_kb.apply(inferir_tipo, axis=1))
 
-    # --- TARJETAS MÉTRICAS DE RESUMEN ---
     total_kanbans = len(df_kb)
     total_gaveta = len(df_kb[df_kb['Tipo Kanban'] == "GAVETA"])
     total_tarjeta = len(df_kb[df_kb['Tipo Kanban'] == "TARJETA"])
@@ -42,7 +41,6 @@ if os.path.exists(DB_FILE):
     m2.metric("📥 Total Gavetas", total_gaveta)
     m3.metric("🏷️ Total Tarjetas", total_tarjeta)
 
-    # --- GRÁFICOS DE VOLUMEN DE KANBANS ---
     col_g1, col_g2 = st.columns([1, 1])
 
     with col_g1:
@@ -78,7 +76,6 @@ if os.path.exists(DB_FILE):
         fig_alm.update_layout(margin=dict(t=20, b=20, l=10, r=10), showlegend=False, height=320)
         st.plotly_chart(fig_alm, use_container_width=True)
 
-    # --- KANBANS POR PUESTO DE TRABAJO DESTINO ---
     st.markdown("##### 📍 Cantidad de Kanbans por Puesto de Trabajo Destino (Top 15)")
     if 'Puesto de trabajo destino' in df_kb.columns:
         counts_puesto = df_kb['Puesto de trabajo destino'].fillna('SIN DEFINIR').value_counts().head(15).reset_index()
@@ -96,12 +93,9 @@ if os.path.exists(DB_FILE):
         fig_puesto.update_layout(yaxis=dict(autorange="reversed"), margin=dict(t=20, b=20, l=10, r=10), height=380)
         st.plotly_chart(fig_puesto, use_container_width=True)
 
-else:
-    st.error(f"No se encontró el archivo de datos {DB_FILE}")
-
-# --- 2. EVOLUCIÓN TEMPORAL DE TIEMPOS DE RESPUESTA LOGÍSTICA ---
+# --- 2. ANÁLISIS DE SLAs Y EVOLUCIÓN TEMPORAL LOGÍSTICA ---
 st.markdown("---")
-st.markdown("### ⏱️ Tiempos de Respuesta de Ejecución Logística")
+st.markdown("### ⏱️ Tiempos de Respuesta y Cumplimiento de SLAs")
 
 if os.path.exists(TRACKER_FILE):
     df_trk = pd.read_csv(TRACKER_FILE, dtype=str)
@@ -119,91 +113,86 @@ if os.path.exists(TRACKER_FILE):
     df_trk['dt_imp'] = df_trk['Fecha Impresion'].apply(parse_dt)
     df_trk['dt_pst'] = df_trk['Fecha Puesto'].apply(parse_dt)
 
-    # Cálculo de diferencias en días / horas
-    def diff_dias(dt1, dt2):
-        if dt1 and dt2 and dt2 >= dt1:
-            return round((dt2 - dt1).total_seconds() / 86400.0, 2)
-        return np.nan
+    # FILTRO POR RANGO DE FECHAS
+    with st.container(border=True):
+        st.markdown("##### 📅 Filtro por Rango de Fechas de Solicitud")
+        col_f1, col_f2 = st.columns(2)
+        f_min_default = datetime.now() - timedelta(days=90)
+        f_max_default = datetime.now()
+        
+        with col_f1:
+            fecha_inicio = st.date_input("Fecha Desde:", value=f_min_default.date())
+        with col_f2:
+            fecha_fin = st.date_input("Fecha Hasta:", value=f_max_default.date())
+
+    # Filtrar dataframe según rango seleccionado
+    mask_fecha = df_trk['dt_solicitud'].apply(
+        lambda dt: dt is not None and fecha_inicio <= dt.date() <= fecha_fin
+    )
+    df_trk_filtered = df_trk[mask_fecha].copy()
 
     def diff_horas(dt1, dt2):
         if dt1 and dt2 and dt2 >= dt1:
             return round((dt2 - dt1).total_seconds() / 3600.0, 2)
         return np.nan
 
-    df_trk['Dias_SAP'] = df_trk.apply(lambda r: diff_dias(r['dt_solicitud'], r['dt_sap']), axis=1)
-    df_trk['Dias_Imp'] = df_trk.apply(lambda r: diff_dias(r['dt_solicitud'], r['dt_imp']), axis=1)
-    df_trk['Dias_Total'] = df_trk.apply(lambda r: diff_dias(r['dt_solicitud'], r['dt_pst']), axis=1)
+    df_trk_filtered['Horas_SAP'] = df_trk_filtered.apply(lambda r: diff_horas(r['dt_solicitud'], r['dt_sap']), axis=1)
+    df_trk_filtered['Horas_Imp'] = df_trk_filtered.apply(lambda r: diff_horas(r['dt_solicitud'], r['dt_imp']), axis=1)
+    df_trk_filtered['Horas_Pst'] = df_trk_filtered.apply(lambda r: diff_horas(r['dt_solicitud'], r['dt_pst']), axis=1)
 
-    df_trk['Horas_SAP'] = df_trk.apply(lambda r: diff_horas(r['dt_solicitud'], r['dt_sap']), axis=1)
-    df_trk['Horas_Imp'] = df_trk.apply(lambda r: diff_horas(r['dt_solicitud'], r['dt_imp']), axis=1)
-    df_trk['Horas_Pst'] = df_trk.apply(lambda r: diff_horas(r['dt_solicitud'], r['dt_pst']), axis=1)
+    # EVALUACIÓN DE SLAs
+    # Metas: SAP < 24h, Impresión < 24h, Puesto < 48h
+    sla_sap_cumplidos = (df_trk_filtered['Horas_SAP'] <= 24).sum()
+    sla_sap_totales = df_trk_filtered['Horas_SAP'].dropna().count()
+    pct_sap = (sla_sap_cumplidos / sla_sap_totales * 100) if sla_sap_totales > 0 else 0
 
-    # Tarjetas Promedio
-    avg_sap_h = df_trk['Horas_SAP'].dropna().mean()
-    avg_imp_h = df_trk['Horas_Imp'].dropna().mean()
-    avg_pst_h = df_trk['Horas_Pst'].dropna().mean()
+    sla_imp_cumplidos = (df_trk_filtered['Horas_Imp'] <= 24).sum()
+    sla_imp_totales = df_trk_filtered['Horas_Imp'].dropna().count()
+    pct_imp = (sla_imp_cumplidos / sla_imp_totales * 100) if sla_imp_totales > 0 else 0
 
-    col_k1, col_k2, col_k3 = st.columns(3)
-    col_k1.metric("💻 Promedio Carga SAP", f"{avg_sap_h:.1f} hs" if pd.notna(avg_sap_h) else "Sin datos")
-    col_k2.metric("🖨️ Promedio Impresión/Etiqueta", f"{avg_imp_h:.1f} hs" if pd.notna(avg_imp_h) else "Sin datos")
-    col_k3.metric("📍 Promedio Llevado a Puesto", f"{avg_pst_h:.1f} hs" if pd.notna(avg_pst_h) else "Sin datos")
+    sla_pst_cumplidos = (df_trk_filtered['Horas_Pst'] <= 48).sum()
+    sla_pst_totales = df_trk_filtered['Horas_Pst'].dropna().count()
+    pct_pst = (sla_pst_cumplidos / sla_pst_totales * 100) if sla_pst_totales > 0 else 0
 
-    # Agrupar por Fecha de Solicitud (Día / Mes)
-    df_trk_valid = df_trk.dropna(subset=['dt_solicitud']).copy()
-    
+    kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
+    kpi_col1.metric("💻 SLA Carga SAP (<24h)", f"{pct_sap:.0f}%", f"{df_trk_filtered['Horas_SAP'].mean():.1f} hs prom." if pd.notna(df_trk_filtered['Horas_SAP'].mean()) else "Sin datos")
+    kpi_col2.metric("🖨️ SLA Impresión (<24h)", f"{pct_imp:.0f}%", f"{df_trk_filtered['Horas_Imp'].mean():.1f} hs prom." if pd.notna(df_trk_filtered['Horas_Imp'].mean()) else "Sin datos")
+    kpi_col3.metric("📍 SLA Puesto Destino (<48h)", f"{pct_pst:.0f}%", f"{df_trk_filtered['Horas_Pst'].mean():.1f} hs prom." if pd.notna(df_trk_filtered['Horas_Pst'].mean()) else "Sin datos")
+
+    # Gráfico de tendencias
+    df_trk_valid = df_trk_filtered.dropna(subset=['dt_solicitud']).copy()
     if not df_trk_valid.empty:
         df_trk_valid['Fecha_Dia'] = df_trk_valid['dt_solicitud'].dt.strftime('%Y-%m-%d')
         
         df_group = df_trk_valid.groupby('Fecha_Dia').agg(
-            Dias_Total=('Dias_Total', 'mean'),
-            Dias_SAP=('Dias_SAP', 'mean'),
-            Dias_Imp=('Dias_Imp', 'mean')
+            Horas_Pst=('Horas_Pst', 'mean'),
+            Horas_Imp=('Horas_Imp', 'mean'),
+            Horas_SAP=('Horas_SAP', 'mean')
         ).reset_index()
 
-        st.markdown("##### 📈 Evolución Temporal de Tiempos de Respuesta (en Días / Horas)")
+        st.markdown("##### 📈 Evolución Temporal de Tiempos de Respuesta (Horas)")
         
         fig_line = go.Figure()
-        
-        # Línea 1: Días Totales de Resolución
         fig_line.add_trace(go.Scatter(
-            x=df_group['Fecha_Dia'],
-            y=df_group['Dias_Total'],
-            mode='lines+markers',
-            name='Días Totales de Resolución',
-            line=dict(color='#4285F4', width=3, shape='spline'),
-            marker=dict(size=8)
+            x=df_group['Fecha_Dia'], y=df_group['Horas_Pst'], mode='lines+markers',
+            name='Total Llevado a Puesto', line=dict(color='#4285F4', width=3, shape='spline')
         ))
-
-        # Línea 2: Días Carga / Impresión
         fig_line.add_trace(go.Scatter(
-            x=df_group['Fecha_Dia'],
-            y=df_group['Dias_Imp'],
-            mode='lines+markers',
-            name='Días Carga a Impresión',
-            line=dict(color='#F2994A', width=3, shape='spline'),
-            marker=dict(size=8)
+            x=df_group['Fecha_Dia'], y=df_group['Horas_Imp'], mode='lines+markers',
+            name='Carga a Impresión', line=dict(color='#F2994A', width=3, shape='spline')
         ))
-
-        # Línea 3: Días Entrega en Puesto
         fig_line.add_trace(go.Scatter(
-            x=df_group['Fecha_Dia'],
-            y=df_group['Dias_SAP'],
-            mode='lines+markers',
-            name='Días Carga en SAP',
-            line=dict(color='#BB6BD9', width=3, shape='spline'),
-            marker=dict(size=8)
+            x=df_group['Fecha_Dia'], y=df_group['Horas_SAP'], mode='lines+markers',
+            name='Carga en SAP', line=dict(color='#BB6BD9', width=3, shape='spline')
         ))
 
         fig_line.update_layout(
-            xaxis_title="Fecha de Solicitud",
-            yaxis_title="Días Transcurridos",
-            hovermode="x unified",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-            margin=dict(t=30, b=20, l=10, r=10),
-            height=380
+            xaxis_title="Fecha de Solicitud", yaxis_title="Horas Transcurridas",
+            hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+            margin=dict(t=30, b=20, l=10, r=10), height=380
         )
         st.plotly_chart(fig_line, use_container_width=True)
     else:
-        st.info("💡 A medida que Logística complete las tareas en el Tracker, se trazará aquí el gráfico evolutivo de tiempos de respuesta.")
+        st.info("💡 No hay registros dentro del rango de fechas seleccionado.")
 else:
-    st.info("Aún no hay registros en el Tracker Logístico para mostrar tendencias temporales.")
+    st.info("Aún no hay registros en el Tracker Logístico para analizar SLAs.")

@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
+import urllib.parse
 from datetime import datetime
 
 try:
@@ -18,10 +19,8 @@ st.subheader("🚚 Tracker de Ejecución Logística")
 TRACKER_FILE = "tracker_ejecucion.csv"
 
 if os.path.exists(TRACKER_FILE):
-    # Leer asegurando que todas las columnas sean tratadas como texto
     df_trk = pd.read_csv(TRACKER_FILE, dtype=str)
     
-    # Normalización y compatibilidad de columnas
     if 'Detalle / Observaciones' in df_trk.columns and 'Detalle' not in df_trk.columns:
         df_trk['Detalle'] = df_trk['Detalle / Observaciones']
 
@@ -47,11 +46,9 @@ if os.path.exists(TRACKER_FILE):
         else:
             df_trk[col] = df_trk[col].fillna(default_val)
             
-    # Forzar casteo a string para evitar errores de tipo al escribir fechas
     for col in df_trk.columns:
         df_trk[col] = df_trk[col].astype(str)
 
-    # Filtro por Estado en interfaz
     estado_filter = st.radio("Filtrar por Estado:", ["TODOS", "PENDIENTES", "COMPLETADOS"], horizontal=True)
     
     def obtener_estado_general(r):
@@ -67,7 +64,6 @@ if os.path.exists(TRACKER_FILE):
         else:
             return "PENDIENTE"
 
-    # Actualizar columna dinámica
     df_trk['Estado Logístico'] = df_trk.apply(obtener_estado_general, axis=1)
 
     if estado_filter == "PENDIENTES":
@@ -97,24 +93,35 @@ if os.path.exists(TRACKER_FILE):
                 with col1:
                     st.write(f"**Fecha Solicitud:** `{row.get('Fecha Solicitud')}`")
                     st.write(f"**Solicitante:** `{row.get('Usuario Solicitante')}`")
-                    
                     det_val = str(row.get('Detalle', row.get('Detalle / Observaciones', '-')))
                     st.markdown(f"**Detalle de Cambios:** `{det_val}`")
                     st.write(f"**Ubicación:** Origen `{row.get('Almacén Origen')}` ➔ Destino `{puesto_dest}`")
                     
+                    # --- GENERADOR DE TARJETA Y CÓDIGO QR ---
+                    with st.popover("🖨️ Ver / Imprimir Etiqueta Kanban"):
+                        st.markdown("### 🏷️ Tarjeta Kanban Crucianelli")
+                        qr_data = f"KANBAN|{k_code}|MAT:{mat_code}|DEST:{puesto_dest}"
+                        qr_url = f"https://quickchart.io/qr?text={urllib.parse.quote(qr_data)}&size=150"
+                        
+                        col_card1, col_card2 = st.columns([2, 1])
+                        with col_card1:
+                            st.markdown(f"**Código K:** `{k_code}`")
+                            st.markdown(f"**Material:** `{mat_code}`")
+                            st.markdown(f"**Origen:** {row.get('Almacén Origen')} | **Destino:** {puesto_dest}")
+                            st.caption(f"Solicitud: {row.get('Fecha Solicitud')}")
+                        with col_card2:
+                            st.image(qr_url, caption=f"QR {k_code}", width=120)
+                
                 with col2:
                     usr_log = st.session_state['usuario']['email']
                     now_str = datetime.now(ARG_TZ).strftime("%Y-%m-%d %H:%M:%S")
                     
-                    # 1. Check SAP
                     sap_ok = (str(row.get('Estado SAP')).upper() == 'OK')
                     check_sap = st.checkbox("💻 Carga en Sistema SAP realizada", value=sap_ok, key=f"sap_chk_{idx}")
                     
-                    # 2. Check Impresión / Etiqueta
                     imp_ok = (str(row.get('Estado Impresion')).upper() == 'OK')
                     check_imp = st.checkbox("🖨️ Impresión y etiqueta pegada", value=imp_ok, key=f"imp_chk_{idx}")
 
-                    # 3. Check Llevado a Puesto Destino
                     pst_ok = (str(row.get('Estado Puesto')).upper() == 'OK')
                     check_pst = st.checkbox("📍 Llevado al puesto de trabajo destino", value=pst_ok, key=f"pst_chk_{idx}")
                     
