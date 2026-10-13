@@ -136,17 +136,9 @@ if os.path.exists(TRACKER_FILE):
                         
                         html_pp = f"<br><strong>Punto de Pedido:</strong> {lote_pp_str}" if lote_pp_str else ""
                         
-                        # Maquetado adaptado para impresoras Brother QL (ancho continuo 103mm)
-                        html_etiqueta = f"""
-                        <div id="print-area-{idx}" style="
-                            width: 103mm; 
-                            border: 2px solid #000; 
-                            padding: 10px; 
-                            font-family: Arial, sans-serif; 
-                            background-color: #ffffff; 
-                            color: #000000;
-                            border-radius: 6px;
-                            margin-bottom: 10px;">
+                        # Renderizado HTML de la tarjeta
+                        html_card_inner = f"""
+                        <div style="width: 103mm; border: 2px solid #000; padding: 10px; font-family: Arial, sans-serif; background-color: #ffffff; color: #000000; border-radius: 6px;">
                             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000; padding-bottom: 5px;">
                                 <span style="font-size: 16px; font-weight: bold;">CRUCIANELLI KANBAN</span>
                                 <span style="font-size: 14px; font-weight: bold; background: #000; color: #fff; padding: 2px 6px; border-radius: 3px;">{k_code}</span>
@@ -164,47 +156,65 @@ if os.path.exists(TRACKER_FILE):
                         </div>
                         """
                         
-                        components.html(html_etiqueta, height=200)
+                        components.html(html_card_inner, height=180)
                         
-                        # Botón para enviar por Red Wi-Fi (Socket direct a IP)
-                        if st.button("⚡ Imprimir por Red Wi-Fi (IP Brother)", key=f"btn_ip_{idx}", type="primary"):
+                        # 1. Botón "Imprimir vía rotuladora" (Envío directo por socket TCP)
+                        if st.button("⚡ Imprimir vía rotuladora", key=f"btn_ip_{idx}", type="primary"):
                             exito, msg = enviar_a_impresora_brother(
                                 printer_ip, k_code, mat_code, row.get('Almacén Origen'), puesto_dest, qr_data
                             )
                             if exito:
                                 st.success(msg)
                             else:
-                                st.warning(f"{msg} Utilice el botón de diálogo de impresión.")
+                                st.warning(f"{msg} Utilice el botón alternativo de navegación.")
 
-                        # Botón alternativo de impresión del navegador
-                        btn_print_html = f"""
-                        <script>
-                        function imprimirEtiqueta_{idx}() {{
-                            var contenido = document.getElementById("print-area-{idx}").outerHTML;
-                            var ventana = window.open('', '', 'height=500,width=600');
-                            ventana.document.write('<html><head><title>Imprimir Etiqueta {k_code}</title>');
-                            ventana.document.write('<style>@page {{ size: 103mm auto; margin: 0; }} body {{ margin: 5px; }}</style>');
-                            ventana.document.write('</head><body>');
-                            ventana.document.write(contenido);
-                            ventana.document.write('</body></html>');
-                            ventana.document.close();
-                            ventana.focus();
-                            setTimeout(function() {{ ventana.print(); ventana.close(); }}, 500);
-                        }}
-                        </script>
-                        <button onclick="imprimirEtiqueta_{idx}()" style="
-                            background-color: #555; 
-                            color: white; 
-                            padding: 6px 12px; 
-                            border: none; 
-                            border-radius: 4px; 
-                            cursor: pointer; 
-                            margin-top: 5px; 
-                            width: 100%;">
-                            🌐 Imprimir vía Diálogo de Navegador
-                        </button>
+                        # 2. Botón "Imprimir desde el navegador" (Disparo nativo de diálogo de impresión)
+                        html_print_btn = f"""
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                        <style>
+                            body {{ margin: 0; padding: 0; font-family: Arial, sans-serif; }}
+                            .btn-print {{
+                                background-color: #555555;
+                                color: white;
+                                padding: 8px 12px;
+                                border: none;
+                                border-radius: 4px;
+                                cursor: pointer;
+                                font-weight: bold;
+                                width: 100%;
+                                font-size: 14px;
+                            }}
+                            .btn-print:hover {{
+                                background-color: #333333;
+                            }}
+                        </style>
+                        </head>
+                        <body>
+                            <button class="btn-print" onclick="ejecutarImpresion()">🌐 Imprimir desde el navegador</button>
+
+                            <script>
+                            function ejecutarImpresion() {{
+                                var contenido = `{html_card_inner}`;
+                                var win = window.open('', '_blank', 'width=600,height=500');
+                                win.document.write('<html><head><title>Imprimir Etiqueta {k_code}</title>');
+                                win.document.write('<style>@page {{ size: 103mm auto; margin: 0; }} body {{ margin: 10px; background: #fff; }}</style>');
+                                win.document.write('</head><body>');
+                                win.document.write(contenido);
+                                win.document.write('</body></html>');
+                                win.document.close();
+                                win.focus();
+                                setTimeout(function() {{
+                                    win.print();
+                                    win.close();
+                                }}, 400);
+                            }}
+                            </script>
+                        </body>
+                        </html>
                         """
-                        components.html(btn_print_html, height=45)
+                        components.html(html_print_btn, height=45)
 
                 with col2:
                     usr_log = st.session_state['usuario']['email']
