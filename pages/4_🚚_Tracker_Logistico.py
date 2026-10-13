@@ -18,12 +18,31 @@ if 'usuario' not in st.session_state or not st.session_state['usuario']:
 
 st.subheader("🚚 Tracker de Ejecución Logística")
 
-# Configuración de IP de la rotuladora Brother en la barra lateral o sección
+# Configuración de IP de la rotuladora Brother en la barra lateral
 with st.sidebar:
     st.markdown("### 🖨️ Configuración Impresora")
     printer_ip = st.text_input("IP Rotuladora Brother (Wi-Fi):", value="192.168.1.150", help="Dirección IP asignada a la Brother QL-1110NWB en la red de la planta.")
 
 TRACKER_FILE = "tracker_ejecucion.csv"
+DB_FILE = "TablaZ.xlsx"
+SHEET_NAME = "Kanbans CRUCIANELLI"
+
+# Cargar catálogo máster para obtener Lotes de Reposición y Punto de Pedido
+dict_cantidades = {}
+if os.path.exists(DB_FILE):
+    try:
+        df_master = pd.read_excel(DB_FILE, sheet_name=SHEET_NAME)
+        for _, r_m in df_master.iterrows():
+            k_num = str(r_m.get('N° Etiquetas', '')).strip().upper()
+            c_repo = str(r_m.get('Cantidad Reposicion', '-'))
+            c_pp = str(r_m.get('Cantidad Punto de Pedido', '-'))
+            unidad = str(r_m.get('Unidad Reposicion', 'UN'))
+            dict_cantidades[k_num] = {
+                'repo': f"{c_repo} {unidad}".strip(),
+                'pp': f"{c_pp} {unidad}".strip() if c_pp not in ['-', '0', '0.0', 'nan', ''] else None
+            }
+    except Exception:
+        pass
 
 if os.path.exists(TRACKER_FILE):
     df_trk = pd.read_csv(TRACKER_FILE, dtype=str)
@@ -86,11 +105,16 @@ if os.path.exists(TRACKER_FILE):
         st.info("No se encontraron tareas para el filtro seleccionado.")
     else:
         for idx, row in df_show.iterrows():
-            k_code = str(row.get('Código K', '-'))
+            k_code = str(row.get('Código K', '-')).strip().upper()
             mat_code = str(row.get('Material', '-'))
             action_type = str(row.get('Tipo de Acción', 'ACCIÓN'))
             puesto_dest = str(row.get('Puesto Destino', '-'))
             est_log = str(row.get('Estado Logístico', 'PENDIENTE'))
+            
+            # Recuperar lotes
+            datos_k = dict_cantidades.get(k_code, {'repo': 'Consultar Tabla', 'pp': None})
+            lote_repo_str = datos_k['repo']
+            lote_pp_str = datos_k['pp']
             
             badge = "🔴" if est_log == "PENDIENTE" else ("🟡" if est_log == "EN PROCESO" else "🟢")
             
@@ -104,16 +128,45 @@ if os.path.exists(TRACKER_FILE):
                     st.markdown(f"**Detalle de Cambios:** `{det_val}`")
                     st.write(f"**Ubicación:** Origen `{row.get('Almacén Origen')}` ➔ Destino `{puesto_dest}`")
                     
-                    # --- POPUP CON OPCIONES DE IMPRESIÓN ---
-                    with st.popover("🖨️ Imprimir Etiqueta Kanban"):
+                    # --- VISTA E IMPRESIÓN DE ETIQUETA BROTHER (103mm) CON LOTES ---
+                    with st.popover("🖨️ Ver / Imprimir Etiqueta Kanban"):
                         st.markdown("### 🏷️ Tarjeta Kanban Crucianelli")
-                        qr_data = f"KANBAN|{k_code}|MAT:{mat_code}|DEST:{puesto_dest}"
+                        qr_data = f"KANBAN|{k_code}|MAT:{mat_code}|DEST:{puesto_dest}|REPO:{lote_repo_str}"
                         qr_url = f"https://quickchart.io/qr?text={urllib.parse.quote(qr_data)}&size=160"
                         
-                        # Vista previa de etiqueta
-                        st.image(qr_url, caption=f"QR {k_code}", width=130)
+                        html_pp = f"<br><strong>Punto de Pedido:</strong> {lote_pp_str}" if lote_pp_str else ""
                         
-                        # 1. Botón para enviar por Red Wi-Fi (Socket direct a IP)
+                        # Maquetado adaptado para impresoras Brother QL (ancho continuo 103mm)
+                        html_etiqueta = f"""
+                        <div id="print-area-{idx}" style="
+                            width: 103mm; 
+                            border: 2px solid #000; 
+                            padding: 10px; 
+                            font-family: Arial, sans-serif; 
+                            background-color: #ffffff; 
+                            color: #000000;
+                            border-radius: 6px;
+                            margin-bottom: 10px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000; padding-bottom: 5px;">
+                                <span style="font-size: 16px; font-weight: bold;">CRUCIANELLI KANBAN</span>
+                                <span style="font-size: 14px; font-weight: bold; background: #000; color: #fff; padding: 2px 6px; border-radius: 3px;">{k_code}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+                                <div style="font-size: 13px; line-height: 1.4;">
+                                    <strong>Material:</strong> <span style="font-size: 15px; font-weight: bold;">{mat_code}</span><br>
+                                    <strong>Origen:</strong> {row.get('Almacén Origen')} | <strong>Destino:</strong> <span style="font-size: 14px; font-weight: bold;">{puesto_dest}</span><br>
+                                    <strong>Lote Reposición:</strong> <span style="font-size: 14px; font-weight: bold; color: #2b5c8f;">{lote_repo_str}</span>{html_pp}
+                                </div>
+                                <div>
+                                    <img src="{qr_url}" style="width: 90px; height: 90px;">
+                                </div>
+                            </div>
+                        </div>
+                        """
+                        
+                        components.html(html_etiqueta, height=200)
+                        
+                        # Botón para enviar por Red Wi-Fi (Socket direct a IP)
                         if st.button("⚡ Imprimir por Red Wi-Fi (IP Brother)", key=f"btn_ip_{idx}", type="primary"):
                             exito, msg = enviar_a_impresora_brother(
                                 printer_ip, k_code, mat_code, row.get('Almacén Origen'), puesto_dest, qr_data
@@ -121,21 +174,17 @@ if os.path.exists(TRACKER_FILE):
                             if exito:
                                 st.success(msg)
                             else:
-                                st.warning(f"{msg} Utilice el botón alternativo de diálogo de impresión.")
+                                st.warning(f"{msg} Utilice el botón de diálogo de impresión.")
 
-                        # 2. Botón alternativo de impresión del navegador
+                        # Botón alternativo de impresión del navegador
                         btn_print_html = f"""
                         <script>
                         function imprimirEtiqueta_{idx}() {{
-                            var contenido = `
-                            <div style="width: 103mm; border: 2px solid #000; padding: 10px; font-family: Arial; background: #fff; color: #000;">
-                                <h3>CRUCIANELLI KANBAN - {k_code}</h3>
-                                <p><strong>Material:</strong> {mat_code}</p>
-                                <p><strong>Origen:</strong> {row.get('Almacén Origen')} | <strong>Destino:</strong> {puesto_dest}</p>
-                                <img src="{qr_url}" style="width: 100px;">
-                            </div>`;
+                            var contenido = document.getElementById("print-area-{idx}").outerHTML;
                             var ventana = window.open('', '', 'height=500,width=600');
-                            ventana.document.write('<html><head><style>@page {{ size: 103mm auto; margin: 0; }}</style></head><body>');
+                            ventana.document.write('<html><head><title>Imprimir Etiqueta {k_code}</title>');
+                            ventana.document.write('<style>@page {{ size: 103mm auto; margin: 0; }} body {{ margin: 5px; }}</style>');
+                            ventana.document.write('</head><body>');
                             ventana.document.write(contenido);
                             ventana.document.write('</body></html>');
                             ventana.document.close();
@@ -143,7 +192,15 @@ if os.path.exists(TRACKER_FILE):
                             setTimeout(function() {{ ventana.print(); ventana.close(); }}, 500);
                         }}
                         </script>
-                        <button onclick="imprimirEtiqueta_{idx}()" style="background-color: #555; color: white; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; margin-top: 5px; width: 100%;">
+                        <button onclick="imprimirEtiqueta_{idx}()" style="
+                            background-color: #555; 
+                            color: white; 
+                            padding: 6px 12px; 
+                            border: none; 
+                            border-radius: 4px; 
+                            cursor: pointer; 
+                            margin-top: 5px; 
+                            width: 100%;">
                             🌐 Imprimir vía Diálogo de Navegador
                         </button>
                         """
