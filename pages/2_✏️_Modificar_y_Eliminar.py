@@ -1,19 +1,12 @@
 import streamlit as st
 import pandas as pd
-import os, re
-from datetime import datetime
-
-try:
-    from zoneinfo import ZoneInfo
-    ARG_TZ = ZoneInfo('America/Argentina/Buenos_Aires')
-except ImportError:
-    import pytz
-    ARG_TZ = pytz.timezone('America/Argentina/Buenos_Aires')
+import os
+from utils.logger import registrar_auditoria, registrar_tracker_logistica, obtener_fecha_hora_actual
 
 if 'usuario' not in st.session_state or not st.session_state['usuario']:
     st.stop()
 
-DB_FILE, PKG_FILE, LOG_FILE, TRACKER_FILE = "TablaZ.xlsx", "Lote packaging.xlsx", "historial_cambios.csv", "tracker_ejecucion.csv"
+DB_FILE = "TablaZ.xlsx"
 SHEET_NAME = "Kanbans CRUCIANELLI"
 
 ALMACENES_PUESTOS = {
@@ -28,45 +21,6 @@ ALMACENES_PUESTOS = {
 LISTA_ALMACENES = list(ALMACENES_PUESTOS.keys())
 OPCIONES_SOPORTE_TARJETA = ["SIN MEDIO DEFINIDO", "PALLET CHICO", "PALLET GRANDE", "CANASTO", "CAPACHO CHICO", "CAPACHO GRANDE", "RACK"]
 OPCIONES_GAVETA = ["S", "M", "L", "XL"]
-
-def registrar_auditoria(fecha_hora, usuario, accion, codigo_k, material, detalle):
-    log_entry = {
-        'Fecha y Hora': fecha_hora,
-        'Usuario': usuario,
-        'Acción': accion,
-        'Código K': codigo_k,
-        'Material': material,
-        'Detalle de Cambios': detalle
-    }
-    df_log = pd.DataFrame([log_entry])
-    if os.path.exists(LOG_FILE):
-        df_log.to_csv(LOG_FILE, mode='a', header=False, index=False)
-    else:
-        df_log.to_csv(LOG_FILE, mode='w', header=True, index=False)
-
-def registrar_tracker_logistica(fecha_hora, usuario, accion, codigo_k, material, origen, destino, detalle):
-    tracker_entry = {
-        'Fecha Solicitud': fecha_hora,
-        'Usuario Solicitante': usuario,
-        'Tipo de Acción': accion,
-        'Código K': codigo_k,
-        'Material': material,
-        'Almacén Origen': origen,
-        'Puesto Destino': destino,
-        'Detalle / Observaciones': detalle,
-        'Estado Logístico': 'PENDIENTE',
-        'Estado SAP': 'PENDIENTE',
-        'Fecha SAP': '-',
-        'Usuario SAP': '-',
-        'Estado Fisico': 'PENDIENTE',
-        'Fecha Fisico': '-',
-        'Usuario Fisico': '-'
-    }
-    df_trk = pd.DataFrame([tracker_entry])
-    if os.path.exists(TRACKER_FILE):
-        df_trk.to_csv(TRACKER_FILE, mode='a', header=False, index=False)
-    else:
-        df_trk.to_csv(TRACKER_FILE, mode='w', header=True, index=False)
 
 st.subheader("✏️ Modificar / 🗑️ Eliminar Kanban")
 
@@ -197,9 +151,8 @@ if os.path.exists(DB_FILE):
                         usr_act = st.session_state['usuario']['email']
                         idx = df_live[df_live['N° Etiquetas'] == k_sel].index[0]
                         cant_pp_final = m_cant_repo if m_tipo_soporte == "GAVETA" else m_cant_pp
-                        now_str = datetime.now(ARG_TZ).strftime("%Y-%m-%d %H:%M:%S")
+                        now_str = obtener_fecha_hora_actual()
                         
-                        # --- COMPARACIÓN DE CAMBIOS PRECISOS ---
                         cambios = []
                         if str(row.get('Centro', '')) != str(m_centro):
                             cambios.append(f"Centro: {row.get('Centro')} ➔ {m_centro}")
@@ -230,7 +183,6 @@ if os.path.exists(DB_FILE):
 
                         detalle_cambios_str = ", ".join(cambios) if cambios else "Sin cambios detectados"
                         
-                        # Actualizar Excel
                         df_live.loc[idx, 'Centro'] = m_centro
                         df_live.loc[idx, 'Tipo Etiqueta'] = "KI" if m_es_interno else "KE"
                         df_live.loc[idx, 'Tipo Kanban'] = m_tipo_soporte
@@ -249,7 +201,6 @@ if os.path.exists(DB_FILE):
                         with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:
                             df_live.to_excel(writer, sheet_name=SHEET_NAME, index=False)
                             
-                        # Auditoría y Tracker con detalle de cambios exactos
                         registrar_auditoria(now_str, usr_act, "MODIFICACIÓN", k_sel, mat_sel, detalle_cambios_str)
                         registrar_tracker_logistica(now_str, usr_act, "MODIFICAR ETIQUETA", k_sel, mat_sel, m_almacen_origen, m_puesto_destino, detalle_cambios_str)
                         
@@ -268,7 +219,7 @@ if os.path.exists(DB_FILE):
                 mat_del = str(row_del['Material'])
                 alm_o_del = str(row_del.get('Almacén Origen', '-'))
                 p_d_del = str(row_del.get('Puesto de trabajo destino', '-'))
-                now_str = datetime.now(ARG_TZ).strftime("%Y-%m-%d %H:%M:%S")
+                now_str = obtener_fecha_hora_actual()
                 
                 df_del = df_live[df_live['N° Etiquetas'] != k_del]
                 with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:

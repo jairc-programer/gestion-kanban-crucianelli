@@ -2,19 +2,12 @@ import streamlit as st
 import pandas as pd
 import re, os
 from datetime import datetime
-
-# Manejo de Zona Horaria flexible
-try:
-    from zoneinfo import ZoneInfo
-    ARG_TZ = ZoneInfo('America/Argentina/Buenos_Aires')
-except ImportError:
-    import pytz
-    ARG_TZ = pytz.timezone('America/Argentina/Buenos_Aires')
+from utils.logger import registrar_auditoria, registrar_tracker_logistica, obtener_fecha_hora_actual
 
 if 'usuario' not in st.session_state or not st.session_state['usuario']:
     st.stop()
 
-DB_FILE, PKG_FILE, LOG_FILE, TRACKER_FILE = "TablaZ.xlsx", "Lote packaging.xlsx", "historial_cambios.csv", "tracker_ejecucion.csv"
+DB_FILE, PKG_FILE = "TablaZ.xlsx", "Lote packaging.xlsx"
 SHEET_NAME = "Kanbans CRUCIANELLI"
 
 ALMACENES_PUESTOS = {
@@ -28,50 +21,6 @@ ALMACENES_PUESTOS = {
 }
 LISTA_ALMACENES = list(ALMACENES_PUESTOS.keys())
 
-def registrar_auditoria(fecha_hora, usuario, accion, codigo_k, material, detalle):
-    log_entry = {
-        'Fecha y Hora': fecha_hora,
-        'Usuario': usuario,
-        'Acción': accion,
-        'Código K': codigo_k,
-        'Material': material,
-        'Detalle de Cambios': detalle
-    }
-    df_log = pd.DataFrame([log_entry])
-    if os.path.exists(LOG_FILE):
-        df_log.to_csv(LOG_FILE, mode='a', header=False, index=False)
-    else:
-        df_log.to_csv(LOG_FILE, mode='w', header=True, index=False)
-
-def registrar_tracker_logistica(fecha_hora, usuario, accion, codigo_k, material, origen, destino, detalle):
-    tracker_entry = {
-        'Fecha Solicitud': fecha_hora,
-        'Usuario Solicitante': usuario,
-        'Tipo de Acción': accion,
-        'Código K': codigo_k,
-        'Material': material,
-        'Almacén Origen': origen,
-        'Puesto Destino': destino,
-        'Detalle': detalle,
-        'Estado Logístico': 'PENDIENTE',
-        'Estado SAP': 'PENDIENTE',
-        'Fecha SAP': '-',
-        'Usuario SAP': '-',
-        'Estado Impresion': 'PENDIENTE',
-        'Fecha Impresion': '-',
-        'Usuario Impresion': '-',
-        'Estado Puesto': 'PENDIENTE',
-        'Fecha Puesto': '-',
-        'Usuario Puesto': '-',
-        'Fecha Ejecución Logística': '-',
-        'Usuario Logística': '-'
-    }
-    df_trk = pd.DataFrame([tracker_entry])
-    if os.path.exists(TRACKER_FILE):
-        df_trk.to_csv(TRACKER_FILE, mode='a', header=False, index=False)
-    else:
-        df_trk.to_csv(TRACKER_FILE, mode='w', header=True, index=False)
-
 def obtener_siguiente_codigo_k(df):
     if df.empty or 'N° Etiquetas' not in df.columns or df['N° Etiquetas'].dropna().empty: 
         return "K00000001"
@@ -84,7 +33,6 @@ def obtener_siguiente_codigo_k(df):
         i += 1
     return f"K{i:08d}"
 
-# Cargar catálogo de lotes de packaging
 def obtener_lote_packaging(mat_codigo):
     if os.path.exists(PKG_FILE):
         try:
@@ -140,7 +88,6 @@ with col3:
     dias_prep = st.number_input("Días Abastecimiento", min_value=0, value=1)
 
 if st.button("💾 Guardar y Crear Kanban", type="primary"):
-    # Validaciones
     es_valido = True
     
     if not material or not puesto_destino_final:
@@ -150,7 +97,6 @@ if st.button("💾 Guardar y Crear Kanban", type="primary"):
         st.error(f"NO SE PUDO CREAR: En Tipo TARJETA, Punto de Pedido ({cant_pp}) debe ser menor a Reposición ({cant_repo}).")
         es_valido = False
         
-    # Validación de Lote de Packaging Mínimo y Múltiplo
     if es_valido and lote_pkg_std:
         if cant_repo < lote_pkg_std:
             st.error(f"⛔ NO SE PUDO CREAR: La Cantidad de Reposición ({cant_repo:.0f}) no puede ser menor al Lote de Packaging estándar ({lote_pkg_std:.0f}).")
@@ -160,7 +106,7 @@ if st.button("💾 Guardar y Crear Kanban", type="primary"):
             es_valido = False
 
     if es_valido:
-        now = datetime.now(ARG_TZ).strftime("%Y-%m-%d %H:%M:%S")
+        now = obtener_fecha_hora_actual()
         usr = st.session_state['usuario']['email']
         tipo_etiqueta_val = "KI" if es_interno else "KE"
         
