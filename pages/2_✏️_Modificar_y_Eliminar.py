@@ -62,7 +62,7 @@ if os.path.exists(DB_FILE):
                 sel_k_fmt = st.selectbox("Seleccione el Código K a modificar:", opciones_k, key="sel_k_mod_dropdown")
                 k_sel = sel_k_fmt.split(" | ")[0].strip()
                 row = kanbans_encontrados[kanbans_encontrados['N° Etiquetas'] == k_sel].iloc[0]
-                mat_sel = str(row['Material'])
+                mat_sel = str(row['Material']).strip().upper()
                 
                 st.markdown(f"**Modificando:** `{k_sel}` | **Material:** `{mat_sel}`")
                 
@@ -143,11 +143,28 @@ if os.path.exists(DB_FILE):
                     m_dias = st.number_input("Días Abastecimiento", min_value=0, value=val_dias_init, key=f"m_dias_{k_sel}")
 
                 if st.button("💾 Guardar Cambios", type="primary", key=f"btn_save_{k_sel}"):
+                    es_valido = True
+                    
                     if not m_puesto_destino:
-                        st.error("NO SE PUDO MODIFICAR: El Puesto Destino es obligatorio.")
+                        st.error("❌ NO SE PUDO MODIFICAR: El Puesto Destino es obligatorio.")
+                        es_valido = False
                     elif m_tipo_soporte == "TARJETA" and float(m_cant_pp) >= float(m_cant_repo):
-                        st.error(f"NO SE PUDO MODIFICAR: En Tipo TARJETA, Punto de Pedido ({m_cant_pp}) debe ser menor a Reposición ({m_cant_repo}).")
-                    else:
+                        st.error(f"❌ NO SE PUDO MODIFICAR: En Tipo TARJETA, el Punto de Pedido ({m_cant_pp}) debe ser menor a la Reposición ({m_cant_repo}).")
+                        es_valido = False
+
+                    # VALIDACIÓN DE UNICIDAD (Material + Puesto Destino excluyendo el propio Código K)
+                    if es_valido:
+                        duplicado = df_live[
+                            (df_live['Material'].fillna('').astype(str).str.strip().str.upper() == mat_sel) &
+                            (df_live['Puesto de trabajo destino'].fillna('').astype(str).str.strip().str.upper() == m_puesto_destino) &
+                            (df_live['N° Etiquetas'].fillna('').astype(str).str.strip().str.upper() != k_sel)
+                        ]
+                        if not duplicado.empty:
+                            k_conflict = duplicado.iloc[0].get('N° Etiquetas', 'N/A')
+                            st.error(f"⛔ NO SE PUDO MODIFICAR: Ya existe otro Kanban ({k_conflict}) asignado para el Material **{mat_sel}** en el Puesto Destino **{m_puesto_destino}**.")
+                            es_valido = False
+
+                    if es_valido:
                         usr_act = st.session_state['usuario']['email']
                         idx = df_live[df_live['N° Etiquetas'] == k_sel].index[0]
                         cant_pp_final = m_cant_repo if m_tipo_soporte == "GAVETA" else m_cant_pp
@@ -204,31 +221,33 @@ if os.path.exists(DB_FILE):
                         registrar_auditoria(now_str, usr_act, "MODIFICACIÓN", k_sel, mat_sel, detalle_cambios_str)
                         registrar_tracker_logistica(now_str, usr_act, "MODIFICAR ETIQUETA", k_sel, mat_sel, m_almacen_origen, m_puesto_destino, detalle_cambios_str)
                         
-                        st.success(f"✅ Kanban {k_sel} actualizado exitosamente.")
+                        st.success(f"✅ ¡Kanban {k_sel} modificado exitosamente!")
                         st.rerun()
             else:
-                st.warning(f"No se encontraron Kanbans activos para: {busqueda}")
+                st.warning(f"⚠️ No se encontraron Kanbans activos para la búsqueda: '{busqueda}'")
 
     with col_right:
         st.markdown("##### 🗑️ Eliminar Kanban")
         k_del = st.text_input("Código K a eliminar:", key="k_del_input").strip().upper()
-        if st.button("Eliminar Definitivamente", type="primary", key="btn_del") and k_del:
-            if k_del in df_live['N° Etiquetas'].values:
+        if st.button("Eliminar Definitivamente", type="primary", key="btn_del"):
+            if not k_del:
+                st.error("❌ NO SE PUDO ELIMINAR: Ingrese un Código K válido.")
+            elif k_del in df_live['N° Etiquetas'].astype(str).str.strip().str.upper().values:
                 usr_act = st.session_state['usuario']['email']
-                row_del = df_live[df_live['N° Etiquetas'] == k_del].iloc[0]
+                row_del = df_live[df_live['N° Etiquetas'].astype(str).str.strip().str.upper() == k_del].iloc[0]
                 mat_del = str(row_del['Material'])
                 alm_o_del = str(row_del.get('Almacén Origen', '-'))
                 p_d_del = str(row_del.get('Puesto de trabajo destino', '-'))
                 now_str = obtener_fecha_hora_actual()
                 
-                df_del = df_live[df_live['N° Etiquetas'] != k_del]
+                df_del = df_live[df_live['N° Etiquetas'].astype(str).str.strip().str.upper() != k_del]
                 with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:
                     df_del.to_excel(writer, sheet_name=SHEET_NAME, index=False)
                     
                 registrar_auditoria(now_str, usr_act, "ELIMINACIÓN", k_del, mat_del, "ELIMINACIÓN DE KANBAN")
                 registrar_tracker_logistica(now_str, usr_act, "RETIRAR KANBAN", k_del, mat_del, alm_o_del, p_d_del, "RETIRAR KANBAN")
                 
-                st.success(f"Código {k_del} eliminado.")
+                st.success(f"✅ ¡El Kanban {k_del} ha sido eliminado correctamente del sistema!")
                 st.rerun()
             else:
-                st.error("El Código K ingresado no existe.")
+                st.error(f"⛔ NO SE PUDO ELIMINAR: El Código K '{k_del}' no existe en el registro.")

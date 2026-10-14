@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import re, os
-from datetime import datetime
 from utils.logger import registrar_auditoria, registrar_tracker_logistica, obtener_fecha_hora_actual
 
 if 'usuario' not in st.session_state or not st.session_state['usuario']:
@@ -91,18 +90,30 @@ if st.button("💾 Guardar y Crear Kanban", type="primary"):
     es_valido = True
     
     if not material or not puesto_destino_final:
-        st.error("Material y Puesto Destino son obligatorios.")
+        st.error("❌ NO SE PUDO CREAR: El Código de Material y el Puesto Destino son campos obligatorios.")
         es_valido = False
     elif tipo_soporte == "TARJETA" and float(cant_pp) >= float(cant_repo):
-        st.error(f"NO SE PUDO CREAR: En Tipo TARJETA, Punto de Pedido ({cant_pp}) debe ser menor a Reposición ({cant_repo}).")
+        st.error(f"❌ NO SE PUDO CREAR: En Tipo TARJETA, el Punto de Pedido ({cant_pp}) debe ser menor a la Reposición ({cant_repo}).")
         es_valido = False
-        
+
+    # VALIDACIÓN DE UNICIDAD (Material + Puesto Destino)
+    if es_valido and not df_curr.empty:
+        duplicado = df_curr[
+            (df_curr['Material'].fillna('').astype(str).str.strip().str.upper() == material) &
+            (df_curr['Puesto de trabajo destino'].fillna('').astype(str).str.strip().str.upper() == puesto_destino_final)
+        ]
+        if not duplicado.empty:
+            k_existente = duplicado.iloc[0].get('N° Etiquetas', 'N/A')
+            st.error(f"⛔ NO SE PUDO CREAR: Ya existe un Kanban ({k_existente}) asignado para el Material **{material}** en el Puesto Destino **{puesto_destino_final}**. Esta combinación debe ser única.")
+            es_valido = False
+
+    # VALIDACIÓN LOTE PACKAGING
     if es_valido and lote_pkg_std:
         if cant_repo < lote_pkg_std:
             st.error(f"⛔ NO SE PUDO CREAR: La Cantidad de Reposición ({cant_repo:.0f}) no puede ser menor al Lote de Packaging estándar ({lote_pkg_std:.0f}).")
             es_valido = False
         elif (cant_repo % lote_pkg_std) != 0:
-            st.error(f"⛔ NO SE PUDO CREAR: La Cantidad de Reposición ({cant_repo:.0f}) debe ser un múltiplo del Lote de Packaging ({lote_pkg_std:.0f}). Ejemplos válidos: {lote_pkg_std*1:.0f}, {lote_pkg_std*2:.0f}, {lote_pkg_std*3:.0f}...")
+            st.error(f"⛔ NO SE PUDO CREAR: La Cantidad de Reposición ({cant_repo:.0f}) debe ser múltiplo del Lote de Packaging ({lote_pkg_std:.0f}). Ejemplos: {lote_pkg_std*1:.0f}, {lote_pkg_std*2:.0f}, {lote_pkg_std*3:.0f}...")
             es_valido = False
 
     if es_valido:
@@ -136,5 +147,6 @@ if st.button("💾 Guardar y Crear Kanban", type="primary"):
         registrar_auditoria(now, usr, "ALTA KANBAN", proximo_k_val, material, "CREACIÓN")
         registrar_tracker_logistica(now, usr, "CREAR / IMPRIMIR ETIQUETA", proximo_k_val, material, almacen_origen, puesto_destino_final, "CREACIÓN")
         
-        st.success(f"✅ Kanban {proximo_k_val} creado exitosamente.")
+        st.success(f"✅ ¡Kanban {proximo_k_val} creado exitosamente!")
+        st.balloons()
         st.rerun()
