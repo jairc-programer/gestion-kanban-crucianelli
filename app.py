@@ -1,8 +1,16 @@
 import streamlit as st
 from src.database.connection import init_db
 from src.services.auth_service import autenticar_usuario, registrar_usuario
+from utils.style import aplicar_estilo_enterprise
 
-st.set_page_config(page_title="Gestor de Kanbans - Crucianelli", layout="wide")
+st.set_page_config(
+    page_title="Gestor de Kanbans - Crucianelli",
+    page_icon="📦",
+    layout="wide"
+)
+
+# Aplicar refinamiento de interfaz Enterprise (Modo Oscuro Suave)
+aplicar_estilo_enterprise()
 
 # Inicialización de la base de datos relacional
 init_db()

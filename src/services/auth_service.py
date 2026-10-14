@@ -36,10 +36,14 @@ def autenticar_usuario(email: str, password_plana: str):
         if not verify_password(password_plana, usr.password_hash):
             return None, "Contraseña incorrecta."
         
-        # Se extrae el rol como cadena dentro de la sesión activa para evitar DetachedInstanceError
-        rol_valor = usr.rol.value if hasattr(usr.rol, 'value') else str(usr.rol)
-        email_valor = usr.email
+        # Extraer los datos a un diccionario mientras la sesión está abierta
+        datos_usuario = {
+            "email": usr.email,
+            "rol": usr.rol.value if hasattr(usr.rol, 'value') else str(usr.rol)
+        }
 
+        return datos_usuario, None
+        
     # Creamos un objeto simple desconectado de la ORM
     class UsuarioDTO:
         def __init__(self, email, rol_str):

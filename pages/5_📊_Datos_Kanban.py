@@ -2,6 +2,10 @@ import streamlit as st
 import pandas as pd
 import os, io
 from datetime import datetime, timedelta
+from utils.style import aplicar_estilo_enterprise
+
+# Aplicar estilo visual Enterprise (Modo Oscuro Suave)
+aplicar_estilo_enterprise()
 
 if 'usuario' not in st.session_state or not st.session_state['usuario']:
     st.stop()

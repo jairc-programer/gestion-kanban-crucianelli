@@ -5,6 +5,10 @@ import urllib.parse
 from datetime import datetime
 import streamlit.components.v1 as components
 from utils.printer import enviar_a_impresora_brother
+from utils.style import aplicar_estilo_enterprise
+
+# Aplicar estilo visual Enterprise (Modo Oscuro Suave)
+aplicar_estilo_enterprise()
 
 try:
     from zoneinfo import ZoneInfo

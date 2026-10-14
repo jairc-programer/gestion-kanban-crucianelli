@@ -5,6 +5,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 import os
 from datetime import datetime, timedelta
+from utils.style import aplicar_estilo_enterprise
+
+# Aplicar estilo visual Enterprise (Modo Oscuro Suave)
+aplicar_estilo_enterprise()
 
 if 'usuario' not in st.session_state or not st.session_state['usuario']:
     st.stop()
