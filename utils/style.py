@@ -69,4 +69,4 @@ def aplicar_estilo_enterprise():
         border: 1px solid #323846 !important;
     }
     </style>
-    """, unsafe_allow_html=unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
