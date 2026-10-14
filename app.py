@@ -9,7 +9,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Aplicar refinamiento de interfaz Enterprise (Modo Oscuro Suave)
+# Aplicar estilo visual Enterprise
 aplicar_estilo_enterprise()
 
 # Inicialización de la base de datos relacional
@@ -40,11 +40,16 @@ if not st.session_state['usuario']:
                     if err:
                         st.toast(err, icon="❌")
                     else:
+                        # Extraer email y rol de forma segura sin importar si usr_data es un dict u objeto
+                        u_email = usr_data.get("email") if isinstance(usr_data, dict) else getattr(usr_data, "email", str(e_clean))
+                        u_rol_raw = usr_data.get("rol") if isinstance(usr_data, dict) else getattr(usr_data, "rol", "Consulta")
+                        u_rol = u_rol_raw.value if hasattr(u_rol_raw, "value") else str(u_rol_raw)
+
                         st.session_state['usuario'] = {
-                            "email": usr_data.email,
-                            "rol": usr_data.rol.value
+                            "email": u_email,
+                            "rol": u_rol
                         }
-                        st.toast(f"Bienvenido {usr_data.email}", icon="✅")
+                        st.toast(f"Bienvenido {u_email}", icon="✅")
                         st.rerun()
 
         with tab_reg:
@@ -89,7 +94,7 @@ with st.container(border=True):
 rol = usr_data['rol']
 
 paginas = []
-if rol == "Procesos":
+if rol.lower() == "procesos":
     paginas = [
         st.Page("pages/1_➕_Crear_Kanban.py", title="Crear Kanban", icon="➕"),
         st.Page("pages/2_✏️_Modificar_y_Eliminar.py", title="Modificar/Eliminar", icon="✏️"),
@@ -99,7 +104,7 @@ if rol == "Procesos":
         st.Page("pages/6_📜_Historial_Auditoria.py", title="Auditoría", icon="📜"),
         st.Page("pages/7_👤_Mi_Perfil.py", title="Mi Perfil", icon="👤")
     ]
-elif rol == "Logistica":
+elif rol.lower() == "logistica":
     paginas = [
         st.Page("pages/4_🚚_Tracker_Logistico.py", title="Tracker Logístico", icon="🚚"),
         st.Page("pages/3_📈_Panel_KPIs.py", title="Panel KPIs", icon="📈"),
