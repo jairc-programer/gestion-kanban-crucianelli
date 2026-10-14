@@ -24,6 +24,15 @@ OPCIONES_GAVETA = ["S", "M", "L", "XL"]
 
 st.subheader("✏️ Modificar / 🗑️ Eliminar Kanban")
 
+# Mensajes persistentes tras rerun
+if 'msg_mod_exito' in st.session_state:
+    st.success(st.session_state['msg_mod_exito'])
+    del st.session_state['msg_mod_exito']
+
+if 'msg_del_exito' in st.session_state:
+    st.success(st.session_state['msg_del_exito'])
+    del st.session_state['msg_del_exito']
+
 if os.path.exists(DB_FILE):
     df_live = pd.read_excel(DB_FILE, sheet_name=SHEET_NAME)
     
@@ -221,7 +230,8 @@ if os.path.exists(DB_FILE):
                         registrar_auditoria(now_str, usr_act, "MODIFICACIÓN", k_sel, mat_sel, detalle_cambios_str)
                         registrar_tracker_logistica(now_str, usr_act, "MODIFICAR ETIQUETA", k_sel, mat_sel, m_almacen_origen, m_puesto_destino, detalle_cambios_str)
                         
-                        st.success(f"✅ ¡Kanban {k_sel} modificado exitosamente!")
+                        st.session_state['msg_mod_exito'] = f"✅ ¡Kanban {k_sel} modificado exitosamente!"
+                        st.toast(f"✅ ¡Kanban {k_sel} modificado!", icon="💾")
                         st.rerun()
             else:
                 st.warning(f"⚠️ No se encontraron Kanbans activos para la búsqueda: '{busqueda}'")
@@ -247,7 +257,8 @@ if os.path.exists(DB_FILE):
                 registrar_auditoria(now_str, usr_act, "ELIMINACIÓN", k_del, mat_del, "ELIMINACIÓN DE KANBAN")
                 registrar_tracker_logistica(now_str, usr_act, "RETIRAR KANBAN", k_del, mat_del, alm_o_del, p_d_del, "RETIRAR KANBAN")
                 
-                st.success(f"✅ ¡El Kanban {k_del} ha sido eliminado correctamente del sistema!")
+                st.session_state['msg_del_exito'] = f"✅ ¡El Kanban {k_del} ha sido eliminado correctamente del sistema!"
+                st.toast(f"✅ ¡Kanban {k_del} eliminado!", icon="🗑️")
                 st.rerun()
             else:
                 st.error(f"⛔ NO SE PUDO ELIMINAR: El Código K '{k_del}' no existe en el registro.")

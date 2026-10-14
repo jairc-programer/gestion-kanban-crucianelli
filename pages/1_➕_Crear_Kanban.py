@@ -52,6 +52,11 @@ def obtener_lote_packaging(mat_codigo):
 
 st.subheader("➕ Alta de Nuevo Kanban")
 
+# Mostrar mensajes persistentes tras rerun
+if 'msg_crear_exito' in st.session_state:
+    st.success(st.session_state['msg_crear_exito'])
+    del st.session_state['msg_crear_exito']
+
 df_curr = pd.read_excel(DB_FILE, sheet_name=SHEET_NAME) if os.path.exists(DB_FILE) else pd.DataFrame()
 proximo_k_val = obtener_siguiente_codigo_k(df_curr)
 
@@ -147,6 +152,6 @@ if st.button("💾 Guardar y Crear Kanban", type="primary"):
         registrar_auditoria(now, usr, "ALTA KANBAN", proximo_k_val, material, "CREACIÓN")
         registrar_tracker_logistica(now, usr, "CREAR / IMPRIMIR ETIQUETA", proximo_k_val, material, almacen_origen, puesto_destino_final, "CREACIÓN")
         
-        st.success(f"✅ ¡Kanban {proximo_k_val} creado exitosamente!")
-        st.balloons()
+        st.session_state['msg_crear_exito'] = f"✅ ¡Kanban {proximo_k_val} para material {material} en {puesto_destino_final} creado exitosamente!"
+        st.toast(f"✅ ¡Kanban {proximo_k_val} creado!", icon="🎉")
         st.rerun()
