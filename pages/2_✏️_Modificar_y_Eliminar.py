@@ -1,10 +1,69 @@
 import streamlit as st
 import pandas as pd
 import os
-from utils.logger import registrar_auditoria, registrar_tracker_logistica, obtener_fecha_hora_actual
+from datetime import datetime
+
+try:
+    from zoneinfo import ZoneInfo
+    ARG_TZ = ZoneInfo('America/Argentina/Buenos_Aires')
+except ImportError:
+    import pytz
+    ARG_TZ = pytz.timezone('America/Argentina/Buenos_Aires')
+
+def obtener_fecha_hora_actual():
+    return datetime.now(ARG_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+def registrar_auditoria(fecha_hora, usuario, accion, codigo_k, material, detalle):
+    auditoria_file = "historial_auditoria.csv"
+    nuevo_registro = {
+        "Fecha y Hora": fecha_hora,
+        "Usuario": usuario,
+        "Acción": accion,
+        "Código K": codigo_k,
+        "Material": material,
+        "Detalle de Cambios": detalle
+    }
+    if os.path.exists(auditoria_file):
+        df = pd.read_csv(auditoria_file)
+        df = pd.concat([df, pd.DataFrame([nuevo_registro])], ignore_index=True)
+    else:
+        df = pd.DataFrame([nuevo_registro])
+    df.to_csv(auditoria_file, index=False)
+
+def registrar_tracker_logistica(fecha_hora, usuario, tipo_accion, codigo_k, material, origen, destino, detalle):
+    tracker_file = "tracker_ejecucion.csv"
+    nuevo_registro = {
+        "Fecha Solicitud": fecha_hora,
+        "Usuario Solicitante": usuario,
+        "Tipo de Acción": tipo_accion,
+        "Código K": codigo_k,
+        "Material": material,
+        "Almacén Origen": origen,
+        "Puesto Destino": destino,
+        "Detalle": detalle,
+        "Estado Logístico": "PENDIENTE",
+        "Estado SAP": "PENDIENTE",
+        "Fecha SAP": "-",
+        "Usuario SAP": "-",
+        "Estado Impresion": "PENDIENTE",
+        "Fecha Impresion": "-",
+        "Usuario Impresion": "-",
+        "Estado Puesto": "PENDIENTE",
+        "Fecha Puesto": "-",
+        "Usuario Puesto": "-",
+        "Fecha Ejecución Logística": "-",
+        "Usuario Logística": "-"
+    }
+    if os.path.exists(tracker_file):
+        df = pd.read_csv(tracker_file)
+        df = pd.concat([df, pd.DataFrame([nuevo_registro])], ignore_index=True)
+    else:
+        df = pd.DataFrame([nuevo_registro])
+    df.to_csv(tracker_file, index=False)
+
 from utils.style import aplicar_estilo_enterprise
 
-# Aplicar estilo visual Enterprise (Modo Oscuro Suave)
+# Aplicar estilo visual Enterprise
 aplicar_estilo_enterprise()
 
 if 'usuario' not in st.session_state or not st.session_state['usuario']:
@@ -28,7 +87,6 @@ OPCIONES_GAVETA = ["S", "M", "L", "XL"]
 
 st.subheader("✏️ Modificar / 🗑️ Eliminar Kanban")
 
-# Mensajes persistentes tras rerun
 if 'msg_mod_exito' in st.session_state:
     st.success(st.session_state['msg_mod_exito'])
     del st.session_state['msg_mod_exito']
@@ -165,7 +223,6 @@ if os.path.exists(DB_FILE):
                         st.error(f"❌ NO SE PUDO MODIFICAR: En Tipo TARJETA, el Punto de Pedido ({m_cant_pp}) debe ser menor a la Reposición ({m_cant_repo}).")
                         es_valido = False
 
-                    # VALIDACIÓN DE UNICIDAD (Material + Puesto Destino excluyendo el propio Código K)
                     if es_valido:
                         duplicado = df_live[
                             (df_live['Material'].fillna('').astype(str).str.strip().str.upper() == mat_sel) &

@@ -1,10 +1,69 @@
 import streamlit as st
 import pandas as pd
 import re, os
-from utils.logger import registrar_auditoria, registrar_tracker_logistica, obtener_fecha_hora_actual
+from datetime import datetime
+
+try:
+    from zoneinfo import ZoneInfo
+    ARG_TZ = ZoneInfo('America/Argentina/Buenos_Aires')
+except ImportError:
+    import pytz
+    ARG_TZ = pytz.timezone('America/Argentina/Buenos_Aires')
+
+def obtener_fecha_hora_actual():
+    return datetime.now(ARG_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+def registrar_auditoria(fecha_hora, usuario, accion, codigo_k, material, detalle):
+    auditoria_file = "historial_auditoria.csv"
+    nuevo_registro = {
+        "Fecha y Hora": fecha_hora,
+        "Usuario": usuario,
+        "Acción": accion,
+        "Código K": codigo_k,
+        "Material": material,
+        "Detalle de Cambios": detalle
+    }
+    if os.path.exists(auditoria_file):
+        df = pd.read_csv(auditoria_file)
+        df = pd.concat([df, pd.DataFrame([nuevo_registro])], ignore_index=True)
+    else:
+        df = pd.DataFrame([nuevo_registro])
+    df.to_csv(auditoria_file, index=False)
+
+def registrar_tracker_logistica(fecha_hora, usuario, tipo_accion, codigo_k, material, origen, destino, detalle):
+    tracker_file = "tracker_ejecucion.csv"
+    nuevo_registro = {
+        "Fecha Solicitud": fecha_hora,
+        "Usuario Solicitante": usuario,
+        "Tipo de Acción": tipo_accion,
+        "Código K": codigo_k,
+        "Material": material,
+        "Almacén Origen": origen,
+        "Puesto Destino": destino,
+        "Detalle": detalle,
+        "Estado Logístico": "PENDIENTE",
+        "Estado SAP": "PENDIENTE",
+        "Fecha SAP": "-",
+        "Usuario SAP": "-",
+        "Estado Impresion": "PENDIENTE",
+        "Fecha Impresion": "-",
+        "Usuario Impresion": "-",
+        "Estado Puesto": "PENDIENTE",
+        "Fecha Puesto": "-",
+        "Usuario Puesto": "-",
+        "Fecha Ejecución Logística": "-",
+        "Usuario Logística": "-"
+    }
+    if os.path.exists(tracker_file):
+        df = pd.read_csv(tracker_file)
+        df = pd.concat([df, pd.DataFrame([nuevo_registro])], ignore_index=True)
+    else:
+        df = pd.DataFrame([nuevo_registro])
+    df.to_csv(tracker_file, index=False)
+
 from utils.style import aplicar_estilo_enterprise
 
-# Aplicar estilo visual Enterprise (Modo Oscuro Suave)
+# Aplicar estilo visual Enterprise
 aplicar_estilo_enterprise()
 
 if 'usuario' not in st.session_state or not st.session_state['usuario']:
@@ -56,7 +115,6 @@ def obtener_lote_packaging(mat_codigo):
 
 st.subheader("➕ Alta de Nuevo Kanban")
 
-# Mostrar mensajes persistentes tras rerun
 if 'msg_crear_exito' in st.session_state:
     st.success(st.session_state['msg_crear_exito'])
     del st.session_state['msg_crear_exito']
@@ -105,7 +163,6 @@ if st.button("💾 Guardar y Crear Kanban", type="primary"):
         st.error(f"❌ NO SE PUDO CREAR: En Tipo TARJETA, el Punto de Pedido ({cant_pp}) debe ser menor a la Reposición ({cant_repo}).")
         es_valido = False
 
-    # VALIDACIÓN DE UNICIDAD (Material + Puesto Destino)
     if es_valido and not df_curr.empty:
         duplicado = df_curr[
             (df_curr['Material'].fillna('').astype(str).str.strip().str.upper() == material) &
@@ -113,16 +170,15 @@ if st.button("💾 Guardar y Crear Kanban", type="primary"):
         ]
         if not duplicado.empty:
             k_existente = duplicado.iloc[0].get('N° Etiquetas', 'N/A')
-            st.error(f"⛔ NO SE PUDO CREAR: Ya existe un Kanban ({k_existente}) asignado para el Material **{material}** en el Puesto Destino **{puesto_destino_final}**. Esta combinación debe ser única.")
+            st.error(f"⛔ NO SE PUDO CREAR: Ya existe un Kanban ({k_existente}) asignado para el Material **{material}** en el Puesto Destino **{puesto_destino_final}**.")
             es_valido = False
 
-    # VALIDACIÓN LOTE PACKAGING
     if es_valido and lote_pkg_std:
         if cant_repo < lote_pkg_std:
             st.error(f"⛔ NO SE PUDO CREAR: La Cantidad de Reposición ({cant_repo:.0f}) no puede ser menor al Lote de Packaging estándar ({lote_pkg_std:.0f}).")
             es_valido = False
         elif (cant_repo % lote_pkg_std) != 0:
-            st.error(f"⛔ NO SE PUDO CREAR: La Cantidad de Reposición ({cant_repo:.0f}) debe ser múltiplo del Lote de Packaging ({lote_pkg_std:.0f}). Ejemplos: {lote_pkg_std*1:.0f}, {lote_pkg_std*2:.0f}, {lote_pkg_std*3:.0f}...")
+            st.error(f"⛔ NO SE PUDO CREAR: La Cantidad de Reposición ({cant_repo:.0f}) debe ser múltiplo del Lote de Packaging ({lote_pkg_std:.0f}).")
             es_valido = False
 
     if es_valido:
@@ -156,6 +212,6 @@ if st.button("💾 Guardar y Crear Kanban", type="primary"):
         registrar_auditoria(now, usr, "ALTA KANBAN", proximo_k_val, material, "CREACIÓN")
         registrar_tracker_logistica(now, usr, "CREAR / IMPRIMIR ETIQUETA", proximo_k_val, material, almacen_origen, puesto_destino_final, "CREACIÓN")
         
-        st.session_state['msg_crear_exito'] = f"✅ ¡Kanban {proximo_k_val} para material {material} en {puesto_destino_final} creado exitosamente!"
+        st.session_state['msg_crear_exito'] = f"✅ ¡Kanban {proximo_k_val} creado exitosamente!"
         st.toast(f"✅ ¡Kanban {proximo_k_val} creado!", icon="🎉")
         st.rerun()
