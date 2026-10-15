@@ -1,8 +1,9 @@
 import streamlit as st
 import pandas as pd
-import os, io
+import io
 from datetime import datetime, timedelta
 from utils.style import aplicar_estilo_enterprise
+from src.services.db_service import obtener_kanbans_df
 
 # Aplicar estilo visual Enterprise (Modo Oscuro Suave)
 aplicar_estilo_enterprise()
@@ -12,13 +13,11 @@ if 'usuario' not in st.session_state or not st.session_state['usuario']:
 
 st.subheader("📊 Base General de Kanbans")
 
-DB_FILE = "TablaZ.xlsx"
-SHEET_NAME = "Kanbans CRUCIANELLI"
+# Forzar lectura directa desde Supabase
+df_live = obtener_kanbans_df()
 
-if os.path.exists(DB_FILE):
-    df_live = pd.read_excel(DB_FILE, sheet_name=SHEET_NAME)
-    
-    # Inferir Tipo Kanban
+if not df_live.empty:
+    # Inferir Tipo Kanban si no viniera especificado
     def inferir_tipo_kanban(r):
         try:
             c_repo = float(r.get('Cantidad Reposicion', 0))
@@ -37,10 +36,13 @@ if os.path.exists(DB_FILE):
     fecha_limite = datetime.now() - timedelta(days=180)
 
     def evaluar_inactividad(fecha_val):
-        if pd.isna(fecha_val) or str(fecha_val).strip() in ['-', '', 'nan']:
+        if pd.isna(fecha_val) or str(fecha_val).strip() in ['-', '', 'nan', 'None']:
             return "🔴 Inactivo (> 6 meses)"
         try:
             dt = pd.to_datetime(fecha_val)
+            # Quitar zona horaria si la tuviese para comparar limpiamente
+            if hasattr(dt, 'tz') and dt.tz is not None:
+                dt = dt.tz_localize(None)
             if dt < fecha_limite:
                 return "🔴 Inactivo (> 6 meses)"
             return "🟢 Activo Reciente"
@@ -83,7 +85,7 @@ if os.path.exists(DB_FILE):
     
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df_filtrado.to_excel(writer, sheet_name=SHEET_NAME, index=False)
+        df_filtrado.to_excel(writer, sheet_name="Kanbans CRUCIANELLI", index=False)
     
     st.download_button(
         label="📥 Descargar Tabla (.xlsx)", 
@@ -93,4 +95,4 @@ if os.path.exists(DB_FILE):
         type="primary"
     )
 else:
-    st.error(f"No se encontró el archivo {DB_FILE}")
+    st.info("ℹ️ No se encontraron registros en la base de datos de Supabase.")
