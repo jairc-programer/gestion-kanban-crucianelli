@@ -5,25 +5,19 @@ from src.database.models import Kanban, LogAuditoria, TrackerSolicitud, Usuario,
 from src.database.connection import get_db_session
 
 def obtener_siguiente_codigo_k_transaccional(db: Session) -> str:
-    """
-    Escanea la base de datos de Supabase y obtiene el siguiente número K 
-    correlativo disponible sin duplicar códigos existentes.
-    """
-    # Consultar todos los números de etiqueta existentes
+    """Escanea Supabase y obtiene el número K mayor asignado + 1."""
     registros = db.query(Kanban.numero_etiqueta).all()
     
-    numeros_usados = set()
+    max_num = 0
     for (k_code,) in registros:
         if k_code:
             match = re.search(r'\d+', str(k_code))
             if match:
-                numeros_usados.add(int(match.group(0)))
-                
-    # Buscar el primer número disponible partiendo de 1
-    siguiente_num = 1
-    while siguiente_num in numeros_usados:
-        siguiente_num += 1
-        
+                num = int(match.group(0))
+                if num > max_num:
+                    max_num = num
+                    
+    siguiente_num = max_num + 1
     return f"K{siguiente_num:08d}"
 
 def crear_nuevo_kanban(datos: dict, usuario_email: str) -> tuple[bool, str]:
@@ -37,7 +31,7 @@ def crear_nuevo_kanban(datos: dict, usuario_email: str) -> tuple[bool, str]:
         if existente:
             return False, f"Ya existe el Kanban {existente.numero_etiqueta} asignado al material {datos['material']} en el puesto {datos['puesto_destino']}."
         
-        # 2. Generar el código K correlativo único
+        # 2. Generar el código K correlativo único basado en el máximo existente
         codigo_k = obtener_siguiente_codigo_k_transaccional(db)
         
         # 3. Crear el nuevo registro Kanban
@@ -88,7 +82,7 @@ def crear_nuevo_kanban(datos: dict, usuario_email: str) -> tuple[bool, str]:
             usuario_procesos=usuario_email
         ))
         
-        # Confirmar la transacción en la BD remota
+        # Confirmar la transacción en Supabase
         db.commit()
         
     return True, f"Kanban {codigo_k} creado exitosamente."
