@@ -3,19 +3,20 @@ from src.database.connection import init_db
 from src.services.auth_service import autenticar_usuario, registrar_usuario
 from utils.style import aplicar_estilo_enterprise
 
+# Configuración inicial de página (Debe ir lo más arriba posible)
 st.set_page_config(
     page_title="Gestor de Kanbans - Crucianelli",
     page_icon="📦",
     layout="wide"
 )
 
+# Inicializar Base de Datos (Crea tablas si no existen y siembra usuarios)
+init_db()
+
 # Aplicar estilo visual Enterprise
 aplicar_estilo_enterprise()
 
-# Inicialización de la base de datos relacional
-init_db()
-
-# Inicialización de estado global
+# Inicialización de estado global de sesión
 if 'usuario' not in st.session_state:
     st.session_state['usuario'] = None
 
@@ -40,7 +41,6 @@ if not st.session_state['usuario']:
                     if err:
                         st.toast(err, icon="❌")
                     else:
-                        # Extraer email y rol de forma segura sin importar si usr_data es un dict u objeto
                         u_email = usr_data.get("email") if isinstance(usr_data, dict) else getattr(usr_data, "email", str(e_clean))
                         u_rol_raw = usr_data.get("rol") if isinstance(usr_data, dict) else getattr(usr_data, "rol", "Consulta")
                         u_rol = u_rol_raw.value if hasattr(u_rol_raw, "value") else str(u_rol_raw)
