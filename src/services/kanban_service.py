@@ -4,14 +4,10 @@ from src.database.models import Kanban, LogAuditoria, TrackerSolicitud, Usuario,
 from src.database.connection import get_db_session
 
 def obtener_siguiente_codigo_k_transaccional(db: Session) -> str:
-    """
-    Obtiene el siguiente código K realizando un bloqueo seguro a nivel de consulta
-    para prevenir condiciones de carrera entre múltiples usuarios.
-    """
     ultimos_kanbans = db.query(Kanban.numero_etiqueta).all()
     max_num = 0
     for (k_code,) in ultimos_kanbans:
-        if k_code.startswith("K") and k_code[1:].isdigit():
+        if k_code and k_code.startswith("K") and k_code[1:].isdigit():
             num = int(k_code[1:])
             if num > max_num:
                 max_num = num
@@ -21,7 +17,6 @@ def obtener_siguiente_codigo_k_transaccional(db: Session) -> str:
 
 def crear_nuevo_kanban(datos: dict, usuario_email: str) -> tuple[bool, str]:
     with get_db_session() as db:
-        # Validación de duplicados
         existente = db.query(Kanban).filter(
             Kanban.material == datos['material'],
             Kanban.puesto_destino == datos['puesto_destino']
@@ -51,7 +46,7 @@ def crear_nuevo_kanban(datos: dict, usuario_email: str) -> tuple[bool, str]:
         )
         db.add(nuevo_kb)
         
-        # Auditoría transaccional unificada
+        # Registrar Auditoría
         db.add(LogAuditoria(
             accion="CREACIÓN",
             codigo_k=codigo_k,
@@ -63,8 +58,8 @@ def crear_nuevo_kanban(datos: dict, usuario_email: str) -> tuple[bool, str]:
             usuario=usuario_email
         ))
         
-        # Tracker logístico
-        count_sol = db.query(func.count(TrackerSolicitud.id)).scalar()
+        # Registrar Tracker
+        count_sol = db.query(func.count(TrackerSolicitud.id)).scalar() or 0
         id_sol = f"SOL-{(count_sol + 1):05d}"
         
         db.add(TrackerSolicitud(
@@ -79,24 +74,24 @@ def crear_nuevo_kanban(datos: dict, usuario_email: str) -> tuple[bool, str]:
             usuario_procesos=usuario_email
         ))
         
-    return True, f"Kanban {codigo_k} creado exitosamente."
+        db.commit()
+        
+    return True, f"Kanban {codigo_k} creado exitosamente en la base de datos de Supabase."
 
 def eliminar_kanban_seguro(codigo_k: str, email_usuario: str) -> tuple[bool, str]:
     with get_db_session() as session:
-        # 1. Validar si el usuario existe y su rol
         user = session.query(Usuario).filter(Usuario.email == email_usuario).first()
         
-        # Permitir borrado únicamente a PROCESOS
-        if not user or user.rol != RolUsuario.PROCESOS:
-            return False, "❌ Permiso denegado: Solo usuarios con rol 'Procesos' o Administrador pueden eliminar registros."
+        # Permitir borrado si el rol es PROCESOS (en mayúsculas/minúsculas)
+        rol_user = str(user.rol).upper() if user and hasattr(user, 'rol') else ""
+        if "PROCESOS" not in rol_user:
+            return False, "❌ Permiso denegado: Solo usuarios con rol 'Procesos' pueden eliminar registros."
         
-        # 2. Buscar el registro Kanban
         kanban = session.query(Kanban).filter(Kanban.numero_etiqueta == codigo_k).first()
         if not kanban:
             return False, f"❌ El código {codigo_k} no existe en el sistema."
         
-        # 3. Auditoría previa al borrado
-        log = LogAuditoria(
+        session.add(LogAuditoria(
             accion="ELIMINACIÓN",
             codigo_k=kanban.numero_etiqueta,
             material=kanban.material,
@@ -105,9 +100,8 @@ def eliminar_kanban_seguro(codigo_k: str, email_usuario: str) -> tuple[bool, str
             puesto_destino=kanban.puesto_destino,
             detalle_cambio=f"Registro eliminado por {email_usuario}",
             usuario=email_usuario
-        )
-        session.add(log)
+        ))
         
-        # 4. Borrar registro
         session.delete(kanban)
+        session.commit()
         return True, f"✅ Kanban {codigo_k} eliminado exitosamente del sistema."
