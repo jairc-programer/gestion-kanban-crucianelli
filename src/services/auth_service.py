@@ -1,37 +1,58 @@
 import hashlib
+import bcrypt
 from src.database.connection import get_connection
 
+def verificar_password(password_plana: str, pass_db: str) -> bool:
+    """Verifica la contraseña contra Bcrypt (Supabase) o SHA-256."""
+    if not pass_db:
+        return False
+        
+    # Si la clave en BD es hash Bcrypt ($2a$, $2b$, $2y$)
+    if pass_db.startswith("$2"):
+        try:
+            return bcrypt.checkpw(password_plana.encode('utf-8'), pass_db.encode('utf-8'))
+        except Exception:
+            return False
+            
+    # Si es hash SHA-256
+    hash_sha = hashlib.sha256(password_plana.encode('utf-8')).hexdigest()
+    return hash_sha == pass_db
+
 def hash_password(password: str) -> str:
-    """Genera un hash SHA-256 seguro para la contraseña."""
-    return hashlib.sha256(password.encode('utf-8')).hexdigest()
+    """Genera hash Bcrypt estándar para nuevos usuarios."""
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
 def autenticar_usuario(email: str, password: str):
-    """Autentica un usuario contra PostgreSQL (Supabase) o SQLite."""
     email_clean = email.strip().lower()
-    pass_hash = hash_password(password.strip())
+    pass_clean = password.strip()
     
     conn = get_connection()
     cursor = conn.cursor()
     
-    # Detectar si estamos usando PostgreSQL (psycopg2) o SQLite
     is_pg = "psycopg2" in str(type(conn))
     param = "%s" if is_pg else "?"
     
-    query = f"SELECT email, rol FROM usuarios WHERE LOWER(email) = {param} AND password_hash = {param}"
-    
-    cursor.execute(query, (email_clean, pass_hash))
+    query = f"SELECT email, password_hash, rol FROM usuarios WHERE LOWER(TRIM(email)) = {param}"
+    cursor.execute(query, (email_clean,))
     row = cursor.fetchone()
     conn.close()
     
     if row:
-        return {"email": row["email"], "rol": row["rol"]}, None
-    
+        # Extraer campos de la BD
+        email_db = row["email"]
+        pass_db = row["password_hash"]
+        rol_db = str(row["rol"])
+        
+        # Validar la contraseña
+        if verificar_password(pass_clean, pass_db):
+            return {"email": email_db, "rol": rol_db}, None
+            
     return None, "Correo o contraseña incorrectos."
 
 def registrar_usuario(email: str, password: str):
-    """Registra un nuevo usuario respetando los comodines del motor activo."""
     email_clean = email.strip().lower()
-    pass_hash = hash_password(password.strip())
+    pass_clean = password.strip()
     
     if not email_clean.endswith("@crucianelli.com"):
         return False, "Debe utilizar un correo corporativo (@crucianelli.com)."
@@ -42,23 +63,24 @@ def registrar_usuario(email: str, password: str):
     is_pg = "psycopg2" in str(type(conn))
     param = "%s" if is_pg else "?"
     
-    cursor.execute(f"SELECT id FROM usuarios WHERE LOWER(email) = {param}", (email_clean,))
+    cursor.execute(f"SELECT id FROM usuarios WHERE LOWER(TRIM(email)) = {param}", (email_clean,))
     if cursor.fetchone():
         conn.close()
         return False, "El usuario ya se encuentra registrado. Inicie sesión directamente."
     
-    rol_asignado = "Consulta"
+    pass_hash = hash_password(pass_clean)
+    rol_asignado = "CONSULTA" if is_pg else "Consulta"
     
     try:
         if is_pg:
-            query_insert = f"INSERT INTO usuarios (email, password_hash, rol, fecha_creacion) VALUES ({param}, {param}, {param}, CURRENT_TIMESTAMP)"
+            query_insert = f"INSERT INTO usuarios (email, password_hash, rol, fecha_creacion) VALUES ({param}, {param}, {param}::rolusuario, CURRENT_TIMESTAMP)"
         else:
             query_insert = f"INSERT INTO usuarios (email, password_hash, rol, fecha_creacion) VALUES ({param}, {param}, {param}, datetime('now'))"
             
         cursor.execute(query_insert, (email_clean, pass_hash, rol_asignado))
         conn.commit()
         conn.close()
-        return True, "Usuario registrado exitosamente con rol Consulta."
+        return True, "Usuario registrado exitosamente."
     except Exception as e:
         conn.close()
         return False, f"Error al registrar usuario: {str(e)}"
