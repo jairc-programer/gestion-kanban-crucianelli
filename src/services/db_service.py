@@ -6,7 +6,7 @@ DB_FILE = "TablaZ.xlsx"
 SHEET_NAME = "Kanbans CRUCIANELLI"
 
 def sincronizar_desde_archivos_iniciales():
-    """Volca el catálogo inicial de TablaZ.xlsx a Supabase si la tabla está vacía o tiene menos de 10 registros."""
+    """Volca el catálogo inicial con sus VALORES REALES de TablaZ.xlsx a Supabase."""
     conn = get_connection()
     cursor = conn.cursor()
     is_pg = "psycopg2" in str(type(conn))
@@ -22,40 +22,54 @@ def sincronizar_desde_archivos_iniciales():
         else:
             count = 0
 
-        # Si en Supabase hay menos de 10 registros, poblamos con el catálogo del Excel
-        if count < 10 and os.path.exists(DB_FILE):
+        # Si la tabla está vacía, migramos los datos reales
+        if count == 0 and os.path.exists(DB_FILE):
+            print("Iniciando migración limpia de datos reales a Supabase...")
             df = pd.read_excel(DB_FILE, sheet_name=SHEET_NAME)
             
+            # Normalización de encabezados del DataFrame
+            cols_map = {str(c).strip(): c for c in df.columns}
+            
+            def get_val(row_data, col_names, default=""):
+                for cn in col_names:
+                    for real_col in df.columns:
+                        if cn.lower() == str(real_col).strip().lower():
+                            val = row_data[real_col]
+                            if pd.notna(val):
+                                return val
+                return default
+
             registros_a_insertar = []
             for _, r in df.iterrows():
-                k_code = str(r.get('N° Etiquetas', r.get('N° Etiqueta', r.get('codigo_k', '')))).strip().upper()
+                # Extraer VALORES REALES
+                k_code = str(get_val(r, ['N° Etiquetas', 'N° Etiqueta', 'codigo_k', 'numero_etiqueta'])).strip().upper()
                 if not k_code or k_code == 'NAN' or not k_code.startswith('K'):
                     continue
                 
-                mat = str(r.get('Material', '')).strip().upper()
+                mat = str(get_val(r, ['Material', 'material'])).strip().upper()
                 if not mat or mat == 'NAN':
                     continue
 
-                p_dest = str(r.get('Puesto de trabajo destino', r.get('Puesto Destino', ''))).strip().upper()
-                alm_orig = str(r.get('Almacén Origen', r.get('Almacen Origen', 'L010'))).strip()
-                alm_dest = str(r.get('Almacen Destino', r.get('Almacén Destino', 'P140'))).strip()
-                p_orig = str(r.get('Puesto trabajo Origen', r.get('Puesto Origen', '-'))).strip()
-                med = str(r.get('Medio', 'SIN MEDIO DEFINIDO')).strip()
-                t_kanban = str(r.get('Tipo Kanban', 'TARJETA')).strip()
-                t_etiq = str(r.get('Tipo Etiqueta', 'KE')).strip()
-                centro_val = str(r.get('Centro', 'A110')).strip()
+                p_dest = str(get_val(r, ['Puesto de trabajo destino', 'Puesto Destino', 'puesto_destino'])).strip().upper()
+                alm_orig = str(get_val(r, ['Almacén Origen', 'Almacen Origen', 'almacen_origen'], 'L010')).strip()
+                alm_dest = str(get_val(r, ['Almacen Destino', 'Almacén Destino', 'almacen_destino'], 'P140')).strip()
+                p_orig = str(get_val(r, ['Puesto trabajo Origen', 'Puesto Origen', 'puesto_origen'], '-')).strip()
+                med = str(get_val(r, ['Medio', 'medio'], 'SIN MEDIO DEFINIDO')).strip()
+                t_kanban = str(get_val(r, ['Tipo Kanban', 'tipo_kanban'], 'TARJETA')).strip()
+                t_etiq = str(get_val(r, ['Tipo Etiqueta', 'tipo_etiqueta'], 'KE')).strip()
+                centro_val = str(get_val(r, ['Centro', 'centro'], 'A110')).strip()
                 
-                try: c_repo = float(r.get('Cantidad Reposicion', r.get('Cantidad Reposición', 0.0)))
+                try: c_repo = float(get_val(r, ['Cantidad Reposicion', 'Cantidad Reposición', 'cantidad_reposicion'], 0.0))
                 except: c_repo = 0.0
                 
-                try: c_pp = float(r.get('Cantidad Punto de Pedido', 0.0))
+                try: c_pp = float(get_val(r, ['Cantidad Punto de Pedido', 'cantidad_punto_pedido'], 0.0))
                 except: c_pp = 0.0
                 
-                try: t_dias = int(r.get('Tiempo preparación abast. (en días)', r.get('Tiempo preparacion', 1)))
+                try: t_dias = int(get_val(r, ['Tiempo preparación abast. (en días)', 'Tiempo preparacion', 'tiempo_preparacion_dias'], 1))
                 except: t_dias = 1
 
-                un_repo = str(r.get('Unidad Reposicion', r.get('Unidad Reposición', 'UN'))).strip()
-                usr_mod = str(r.get('Usuario Modificación', r.get('Usuario Modificacion', 'Sistema'))).strip()
+                un_repo = str(get_val(r, ['Unidad Reposicion', 'Unidad Reposición', 'unidad_reposicion'], 'UN')).strip()
+                usr_mod = str(get_val(r, ['Usuario Modificación', 'Usuario Modificacion', 'usuario_modificacion'], 'Sistema')).strip()
 
                 registros_a_insertar.append((
                     k_code, t_etiq, t_kanban, med, mat, centro_val,
@@ -86,6 +100,7 @@ def sincronizar_desde_archivos_iniciales():
 
                 cursor.executemany(query, registros_a_insertar)
                 conn.commit()
+                print("✅ Sincronización exitosa de valores reales a Supabase.")
                 
     except Exception as e:
         print("Error al sincronizar catálogo inicial:", e)
