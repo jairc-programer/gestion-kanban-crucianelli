@@ -1,7 +1,7 @@
 import bcrypt
 from sqlalchemy.orm import Session
 from src.database.models import Usuario, RolUsuario
-from src.database.connection import get_db_session
+from src.database.connection import get_connection
 
 # Lista actualizada de roles asignados por correo
 ROLES_PREDEFINIDOS = {
@@ -28,7 +28,7 @@ def autenticar_usuario(email: str, password_plana: str):
     if not email_norm.endswith("@crucianelli.com"):
         return None, "El correo debe pertenecer al dominio @crucianelli.com."
 
-    with get_db_session() as db:
+    with get_connection() as db:
         usr = db.query(Usuario).filter(Usuario.email == email_norm).first()
         if not usr:
             return None, "Usuario no registrado."
@@ -61,7 +61,7 @@ def registrar_usuario(email: str, password_plana: str):
     if not email_norm.endswith("@crucianelli.com"):
         return False, "El correo debe pertenecer al dominio @crucianelli.com."
 
-    with get_db_session() as db:
+    with get_connection() as db:
         if db.query(Usuario).filter(Usuario.email == email_norm).first():
             return False, "El usuario ya se encuentra registrado."
         
