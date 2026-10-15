@@ -1,76 +1,57 @@
-import bcrypt
-from sqlalchemy.orm import Session
-from src.database.models import Usuario, RolUsuario
+import hashlib
 from src.database.connection import get_connection
 
-# Lista actualizada de roles asignados por correo
-ROLES_PREDEFINIDOS = {
-    # Procesos
-    "jairc@crucianelli.com": RolUsuario.PROCESOS,
-    "mmagarello@crucianelli.com": RolUsuario.PROCESOS,
-    "mcabral@crucianelli.com": RolUsuario.PROCESOS,
-    "tabrate@crucianelli.com": RolUsuario.PROCESOS,
-    "gtuninetti@crucianelli.com": RolUsuario.PROCESOS,
-    # Logística
-    "ileon@crucianelli.com": RolUsuario.LOGISTICA,
-    "recepcion3@crucianelli.com": RolUsuario.LOGISTICA,
-    "gfianchini@crucianelli.com": RolUsuario.LOGISTICA,
-}
-
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    """Genera un hash SHA-256 seguro para la contraseña."""
+    return hashlib.sha256(password.encode('utf-8')).hexdigest()
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+def autenticar_usuario(email: str, password: str):
+    """Autentica un usuario contra la base de datos SQLite nativa."""
+    email_clean = email.strip().lower()
+    pass_hash = hash_password(password.strip())
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Buscar usuario por email y contraseña hash
+    cursor.execute(
+        "SELECT email, rol FROM usuarios WHERE LOWER(email) = ? AND password_hash = ?",
+        (email_clean, pass_hash)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row:
+        # Devuelve diccionario con los datos del usuario si coincide
+        return {"email": row["email"], "rol": row["rol"]}, None
+    
+    return None, "Correo o contraseña incorrectos."
 
-def autenticar_usuario(email: str, password_plana: str):
-    email_norm = email.strip().lower()
-    if not email_norm.endswith("@crucianelli.com"):
-        return None, "El correo debe pertenecer al dominio @crucianelli.com."
-
-    with get_connection() as db:
-        usr = db.query(Usuario).filter(Usuario.email == email_norm).first()
-        if not usr:
-            return None, "Usuario no registrado."
+def registrar_usuario(email: str, password: str, rol: str = "Procesos"):
+    """Registra un nuevo usuario en la base de datos SQLite."""
+    email_clean = email.strip().lower()
+    pass_hash = hash_password(password.strip())
+    
+    if "@crucianelli.com" not in email_clean:
+        return False, "Debe utilizar un correo corporativo (@crucianelli.com)."
         
-        if not verify_password(password_plana, usr.password_hash):
-            return None, "Contraseña incorrecta."
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Verificar si ya existe
+    cursor.execute("SELECT id FROM usuarios WHERE LOWER(email) = ?", (email_clean,))
+    if cursor.fetchone():
+        conn.close()
+        return False, "El usuario ya se encuentra registrado."
         
-        # Extraer los datos a un diccionario mientras la sesión está abierta
-        datos_usuario = {
-            "email": usr.email,
-            "rol": usr.rol.value if hasattr(usr.rol, 'value') else str(usr.rol)
-        }
-
-        return datos_usuario, None
-        
-    # Creamos un objeto simple desconectado de la ORM
-    class UsuarioDTO:
-        def __init__(self, email, rol_str):
-            self.email = email
-            self.rol = self._RolWrapper(rol_str)
-        
-        class _RolWrapper:
-            def __init__(self, val):
-                self.value = val
-
-    return UsuarioDTO(email_valor, rol_valor), None
-
-def registrar_usuario(email: str, password_plana: str):
-    email_norm = email.strip().lower()
-    if not email_norm.endswith("@crucianelli.com"):
-        return False, "El correo debe pertenecer al dominio @crucianelli.com."
-
-    with get_connection() as db:
-        if db.query(Usuario).filter(Usuario.email == email_norm).first():
-            return False, "El usuario ya se encuentra registrado."
-        
-        # Asigna el rol definido o CONSULTA por defecto
-        rol_asig = ROLES_PREDEFINIDOS.get(email_norm, RolUsuario.CONSULTA)
-        nuevo_usuario = Usuario(
-            email=email_norm,
-            password_hash=hash_password(password_plana),
-            rol=rol_asig
+    try:
+        cursor.execute(
+            "INSERT INTO usuarios (email, password_hash, rol, fecha_creacion) VALUES (?, ?, ?, datetime('now'))",
+            (email_clean, pass_hash, rol)
         )
-        db.add(nuevo_usuario)
-    return True, f"Usuario registrado exitosamente con rol {rol_asig.value}."
+        conn.commit()
+        conn.close()
+        return True, "Usuario registrado exitosamente."
+    except Exception as e:
+        conn.close()
+        return False, f"Error al registrar usuario: {str(e)}"
