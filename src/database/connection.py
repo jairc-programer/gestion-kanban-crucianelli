@@ -5,6 +5,8 @@ import streamlit as st
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, Session
+from contextlib import contextmanager
 
 DB_PATH = "kanban_crucianelli.db"
 
@@ -23,6 +25,20 @@ def get_engine():
     if "sqlite" in db_url:
         return create_engine(db_url, connect_args={"check_same_thread": False})
     return create_engine(db_url)
+
+@contextmanager
+def get_db_session():
+    """Provee un contexto de sesión transaccional de SQLAlchemy."""
+    engine = get_engine()
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    session = SessionLocal()
+    try:
+        yield session
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 def get_connection():
     """Abre y retorna una conexión directa a PostgreSQL (psycopg2) o SQLite."""
@@ -46,7 +62,7 @@ def init_db():
         is_pg = "psycopg2" in str(type(conn))
         param = "%s" if is_pg else "?"
 
-        # 1. Crear Tabla Usuarios si no existe
+        # Crear Tabla Usuarios
         if is_pg:
             cursor.execute("""
             CREATE TABLE IF NOT EXISTS usuarios (
@@ -68,31 +84,6 @@ def init_db():
             );
             """)
 
-        # 2. Siembra de Usuarios Semilla (Procesos y Logística)
-        usuarios_semilla = [
-            ("jairc@crucianelli.com", "Procesos"),
-            ("mmagarello@crucianelli.com", "Procesos"),
-            ("tabrate@crucianelli.com", "Procesos"),
-            ("abacelli@crucianelli.com", "Procesos"),
-            ("gtuninetti@crucianelli.com", "Procesos"),
-            ("llatanzi@crucianelli.com", "Procesos"),
-            ("mcabral@crucianelli.com", "Procesos"),
-            ("ileon@crucianelli.com", "Logistica"),
-            ("gfianchini@crucianelli.com", "Logistica")
-        ]
-        
-        pass_hash_default = hash_password("Crucianelli2026!")
-        
-        for email, rol in usuarios_semilla:
-            email_clean = email.lower().strip()
-            cursor.execute(f"SELECT id FROM usuarios WHERE LOWER(email) = {param}", (email_clean,))
-            if not cursor.fetchone():
-                if is_pg:
-                    query_insert = f"INSERT INTO usuarios (email, password_hash, rol, fecha_creacion) VALUES ({param}, {param}, {param}, CURRENT_TIMESTAMP)"
-                else:
-                    query_insert = f"INSERT INTO usuarios (email, password_hash, rol, fecha_creacion) VALUES ({param}, {param}, {param}, datetime('now'))"
-                cursor.execute(query_insert, (email_clean, pass_hash_default, rol))
-                
         conn.commit()
         conn.close()
     except Exception as e:
