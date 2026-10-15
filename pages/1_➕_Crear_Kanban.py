@@ -1,76 +1,16 @@
 import streamlit as st
 import pandas as pd
 import re, os
-from datetime import datetime
-
-try:
-    from zoneinfo import ZoneInfo
-    ARG_TZ = ZoneInfo('America/Argentina/Buenos_Aires')
-except ImportError:
-    import pytz
-    ARG_TZ = pytz.timezone('America/Argentina/Buenos_Aires')
-
-def obtener_fecha_hora_actual():
-    return datetime.now(ARG_TZ).strftime("%Y-%m-%d %H:%M:%S")
-
-def registrar_auditoria(fecha_hora, usuario, accion, codigo_k, material, detalle):
-    auditoria_file = "historial_auditoria.csv"
-    nuevo_registro = {
-        "Fecha y Hora": fecha_hora,
-        "Usuario": usuario,
-        "Acción": accion,
-        "Código K": codigo_k,
-        "Material": material,
-        "Detalle de Cambios": detalle
-    }
-    if os.path.exists(auditoria_file):
-        df = pd.read_csv(auditoria_file)
-        df = pd.concat([df, pd.DataFrame([nuevo_registro])], ignore_index=True)
-    else:
-        df = pd.DataFrame([nuevo_registro])
-    df.to_csv(auditoria_file, index=False)
-
-def registrar_tracker_logistica(fecha_hora, usuario, tipo_accion, codigo_k, material, origen, destino, detalle):
-    tracker_file = "tracker_ejecucion.csv"
-    nuevo_registro = {
-        "Fecha Solicitud": fecha_hora,
-        "Usuario Solicitante": usuario,
-        "Tipo de Acción": tipo_accion,
-        "Código K": codigo_k,
-        "Material": material,
-        "Almacén Origen": origen,
-        "Puesto Destino": destino,
-        "Detalle": detalle,
-        "Estado Logístico": "PENDIENTE",
-        "Estado SAP": "PENDIENTE",
-        "Fecha SAP": "-",
-        "Usuario SAP": "-",
-        "Estado Impresion": "PENDIENTE",
-        "Fecha Impresion": "-",
-        "Usuario Impresion": "-",
-        "Estado Puesto": "PENDIENTE",
-        "Fecha Puesto": "-",
-        "Usuario Puesto": "-",
-        "Fecha Ejecución Logística": "-",
-        "Usuario Logística": "-"
-    }
-    if os.path.exists(tracker_file):
-        df = pd.read_csv(tracker_file)
-        df = pd.concat([df, pd.DataFrame([nuevo_registro])], ignore_index=True)
-    else:
-        df = pd.DataFrame([nuevo_registro])
-    df.to_csv(tracker_file, index=False)
-
 from utils.style import aplicar_estilo_enterprise
+from src.services.db_service import obtener_kanbans_df
+from src.services.kanban_service import crear_nuevo_kanban
 
-# Aplicar estilo visual Enterprise
 aplicar_estilo_enterprise()
 
 if 'usuario' not in st.session_state or not st.session_state['usuario']:
     st.stop()
 
-DB_FILE, PKG_FILE = "TablaZ.xlsx", "Lote packaging.xlsx"
-SHEET_NAME = "Kanbans CRUCIANELLI"
+PKG_FILE = "Lote packaging.xlsx"
 
 ALMACENES_PUESTOS = {
     "P110": ["ARM_HORQ", "ARM_MAZ1", "CORTE_01", "MECANIZA", "PRENBAL1", "ROSC_REM"],
@@ -83,28 +23,14 @@ ALMACENES_PUESTOS = {
 }
 LISTA_ALMACENES = list(ALMACENES_PUESTOS.keys())
 
-def obtener_siguiente_codigo_k(df):
-    if df.empty or 'N° Etiquetas' not in df.columns or df['N° Etiquetas'].dropna().empty: 
-        return "K00000001"
-    numeros = [int(m.group(0)) for val in df['N° Etiquetas'].dropna() if (m := re.search(r'\d+', str(val)))]
-    if not numeros:
-        return "K00000001"
-    set_num = set(numeros)
-    i = 1
-    while i in set_num: 
-        i += 1
-    return f"K{i:08d}"
-
 def obtener_lote_packaging(mat_codigo):
     if os.path.exists(PKG_FILE):
         try:
             df_pkg = pd.read_excel(PKG_FILE)
             col_mat = [c for c in df_pkg.columns if 'material' in str(c).lower() or 'código' in str(c).lower()]
             col_lote = [c for c in df_pkg.columns if 'lote' in str(c).lower() or 'cant' in str(c).lower() or 'pack' in str(c).lower()]
-            
             c_m = col_mat[0] if col_mat else df_pkg.columns[0]
             c_l = col_lote[0] if col_lote else df_pkg.columns[1]
-            
             match = df_pkg[df_pkg[c_m].fillna('').astype(str).str.strip().str.upper() == mat_codigo.strip().upper()]
             if not match.empty:
                 val = float(match.iloc[0][c_l])
@@ -119,10 +45,7 @@ if 'msg_crear_exito' in st.session_state:
     st.success(st.session_state['msg_crear_exito'])
     del st.session_state['msg_crear_exito']
 
-df_curr = pd.read_excel(DB_FILE, sheet_name=SHEET_NAME) if os.path.exists(DB_FILE) else pd.DataFrame()
-proximo_k_val = obtener_siguiente_codigo_k(df_curr)
-
-st.info(f"Próximo Código K asignado automáticamente: **{proximo_k_val}**")
+df_curr = obtener_kanbans_df()
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -163,16 +86,6 @@ if st.button("💾 Guardar y Crear Kanban", type="primary"):
         st.error(f"❌ NO SE PUDO CREAR: En Tipo TARJETA, el Punto de Pedido ({cant_pp}) debe ser menor a la Reposición ({cant_repo}).")
         es_valido = False
 
-    if es_valido and not df_curr.empty:
-        duplicado = df_curr[
-            (df_curr['Material'].fillna('').astype(str).str.strip().str.upper() == material) &
-            (df_curr['Puesto de trabajo destino'].fillna('').astype(str).str.strip().str.upper() == puesto_destino_final)
-        ]
-        if not duplicado.empty:
-            k_existente = duplicado.iloc[0].get('N° Etiquetas', 'N/A')
-            st.error(f"⛔ NO SE PUDO CREAR: Ya existe un Kanban ({k_existente}) asignado para el Material **{material}** en el Puesto Destino **{puesto_destino_final}**.")
-            es_valido = False
-
     if es_valido and lote_pkg_std:
         if cant_repo < lote_pkg_std:
             st.error(f"⛔ NO SE PUDO CREAR: La Cantidad de Reposición ({cant_repo:.0f}) no puede ser menor al Lote de Packaging estándar ({lote_pkg_std:.0f}).")
@@ -182,36 +95,29 @@ if st.button("💾 Guardar y Crear Kanban", type="primary"):
             es_valido = False
 
     if es_valido:
-        now = obtener_fecha_hora_actual()
         usr = st.session_state['usuario']['email']
         tipo_etiqueta_val = "KI" if es_interno else "KE"
         
-        nuevo_reg = {
-            'N° Etiquetas': proximo_k_val, 
-            'Tipo Etiqueta': tipo_etiqueta_val,
-            'Tipo Kanban': tipo_soporte, 
-            'Medio': medio_str, 
-            'Material': material, 
-            'Centro': centro,
-            'Almacén Origen': almacen_origen, 
-            'Almacen Destino': almacen_destino,
-            'Puesto trabajo Origen': puesto_origen, 
-            'Puesto de trabajo destino': puesto_destino_final,
-            'Cantidad Reposicion': cant_repo, 
-            'Unidad Reposicion': unidad,
-            'Cantidad Punto de Pedido': cant_pp, 
-            'Tiempo preparación abast. (en días)': dias_prep,
-            'Fecha Modificación': now, 
-            'Usuario Modificación': usr
+        datos_kanban = {
+            'tipo_etiqueta': tipo_etiqueta_val,
+            'tipo_kanban': tipo_soporte,
+            'medio': medio_str,
+            'material': material,
+            'centro': centro,
+            'almacen_origen': almacen_origen,
+            'almacen_destino': almacen_destino,
+            'puesto_origen': puesto_origen,
+            'puesto_destino': puesto_destino_final,
+            'cantidad_reposicion': cant_repo,
+            'unidad_reposicion': unidad,
+            'cantidad_punto_pedido': cant_pp,
+            'tiempo_preparacion_dias': int(dias_prep)
         }
         
-        df_act = pd.concat([df_curr, pd.DataFrame([nuevo_reg])], ignore_index=True)
-        with pd.ExcelWriter(DB_FILE, engine='openpyxl') as writer:
-            df_act.to_excel(writer, sheet_name=SHEET_NAME, index=False)
-            
-        registrar_auditoria(now, usr, "ALTA KANBAN", proximo_k_val, material, "CREACIÓN")
-        registrar_tracker_logistica(now, usr, "CREAR / IMPRIMIR ETIQUETA", proximo_k_val, material, almacen_origen, puesto_destino_final, "CREACIÓN")
-        
-        st.session_state['msg_crear_exito'] = f"✅ ¡Kanban {proximo_k_val} creado exitosamente!"
-        st.toast(f"✅ ¡Kanban {proximo_k_val} creado!", icon="🎉")
-        st.rerun()
+        ok, msg = crear_nuevo_kanban(datos_kanban, usr)
+        if ok:
+            st.session_state['msg_crear_exito'] = f"✅ {msg}"
+            st.toast(f"✅ {msg}", icon="🎉")
+            st.rerun()
+        else:
+            st.error(f"⛔ {msg}")
