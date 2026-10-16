@@ -2,13 +2,41 @@ import pandas as pd
 from src.database.connection import get_engine
 
 def obtener_kanbans_df():
-    """Consulta la tabla 'kanbans' en Supabase a través del engine SQLAlchemy."""
+    """Consulta la tabla 'kanbans' en Supabase a través del engine SQLAlchemy con inferencia de Tipo/Medio."""
     engine = get_engine()
     query = "SELECT * FROM kanbans WHERE numero_etiqueta LIKE 'K%%' ORDER BY id ASC"
     
     with engine.connect() as conn:
         df = pd.read_sql_query(query, conn)
     
+    if not df.empty:
+        # Función para inferir Tipo Kanban según la regla: Reposición == Punto de Pedido
+        def inferir_tipo_kanban(row):
+            t_actual = str(row.get('tipo_kanban', '')).strip().upper()
+            # Si ya tiene asignado un valor explícito en BD, lo respetamos
+            if t_actual in ['GAVETA', 'TARJETA']:
+                return t_actual
+            
+            try:
+                c_repo = float(row.get('cantidad_reposicion', 0))
+                c_pp = float(row.get('cantidad_punto_pedido', 0))
+                if c_repo == c_pp and c_repo > 0:
+                    return "GAVETA"
+                return "TARJETA"
+            except (ValueError, TypeError):
+                return "TARJETA"
+
+        df['tipo_kanban'] = df.apply(inferir_tipo_kanban, axis=1)
+
+        # Normalizar el campo Medio si viene nulo o vacío
+        def normalizar_medio(val):
+            val_str = str(val).strip() if pd.notna(val) else ""
+            if not val_str or val_str.upper() in ['NONE', 'NAN', 'NULL', 'SIN MEDIO DEFINIDO']:
+                return "-"
+            return val_str
+
+        df['medio'] = df['medio'].apply(normalizar_medio)
+
     # Renombrar columnas para la interfaz de Streamlit
     df.rename(columns={
         'numero_etiqueta': 'N° Etiquetas',

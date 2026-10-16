@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from utils.style import aplicar_estilo_enterprise
 from src.services.db_service import obtener_kanbans_df
 
-# Aplicar estilo visual Enterprise (Modo Oscuro Suave)
+# Aplicar estilo visual Enterprise
 aplicar_estilo_enterprise()
 
 if 'usuario' not in st.session_state or not st.session_state['usuario']:
@@ -13,25 +13,10 @@ if 'usuario' not in st.session_state or not st.session_state['usuario']:
 
 st.subheader("📊 Base General de Kanbans")
 
-# Forzar lectura directa desde Supabase
+# Cargar catálogo directamente con inferencia automatizada de Tipo/Medio
 df_live = obtener_kanbans_df()
 
 if not df_live.empty:
-    # Inferir Tipo Kanban si no viniera especificado
-    def inferir_tipo_kanban(r):
-        try:
-            c_repo = float(r.get('Cantidad Reposicion', 0))
-            c_pp = float(r.get('Cantidad Punto de Pedido', 0))
-            return "GAVETA" if c_repo == c_pp and c_repo > 0 else "TARJETA"
-        except (ValueError, TypeError):
-            return "TARJETA"
-
-    if 'Tipo Kanban' not in df_live.columns:
-        df_live['Tipo Kanban'] = df_live.apply(inferir_tipo_kanban, axis=1)
-
-    if 'Medio' not in df_live.columns:
-        df_live['Medio'] = "SIN MEDIO DEFINIDO"
-
     # --- INDICADOR DE INACTIVIDAD (> 6 MESES / 180 DÍAS) ---
     fecha_limite = datetime.now() - timedelta(days=180)
 
@@ -40,7 +25,6 @@ if not df_live.empty:
             return "🔴 Inactivo (> 6 meses)"
         try:
             dt = pd.to_datetime(fecha_val)
-            # Quitar zona horaria si la tuviese para comparar limpiamente
             if hasattr(dt, 'tz') and dt.tz is not None:
                 dt = dt.tz_localize(None)
             if dt < fecha_limite:
