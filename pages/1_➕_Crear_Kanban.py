@@ -79,13 +79,29 @@ with col3:
 if st.button("💾 Guardar y Crear Kanban", type="primary"):
     es_valido = True
     
+    # 1. Validación de campos obligatorios
     if not material or not puesto_destino_final:
         st.error("❌ NO SE PUDO CREAR: El Código de Material y el Puesto Destino son campos obligatorios.")
         es_valido = False
-    elif tipo_soporte == "TARJETA" and float(cant_pp) >= float(cant_repo):
-        st.error(f"❌ NO SE PUDO CREAR: En Tipo TARJETA, el Punto de Pedido ({cant_pp}) debe ser menor a la Reposición ({cant_repo}).")
+    
+    # 2. Validación de formato de Material Crucianelli
+    # Ejemplo: Debe comenzar con letras (PB, CM, MPB, MCB, etc.) seguido de números
+    patron_material = r'^(PB|CM|MPB|MCB|PA|C|M|P|A|K)[0-9]{3,8}$'
+    if es_valido and not re.match(patron_material, material):
+        st.error(f"❌ FORMATO DE MATERIAL INVÁLIDO: '{material}' no coincide con el estándar de códigos corporativos (ej. PB005075, CM001462).")
         es_valido = False
 
+    # 3. Cantidad de reposición válida
+    if es_valido and float(cant_repo) <= 0:
+        st.error("❌ CANTIDAD INVÁLIDA: La Cantidad de Reposición debe ser mayor a 0.")
+        es_valido = False
+
+    # 4. Inconsistencia Punto de Pedido en TARJETA
+    elif es_valido and tipo_soporte == "TARJETA" and float(cant_pp) >= float(cant_repo):
+        st.error(f"❌ NO SE PUDO CREAR: En Tipo TARJETA, el Punto de Pedido ({cant_pp}) debe ser estrictamente menor a la Reposición ({cant_repo}).")
+        es_valido = False
+
+    # 5. Validación Lote Packaging Estándar
     if es_valido and lote_pkg_std:
         if cant_repo < lote_pkg_std:
             st.error(f"⛔ NO SE PUDO CREAR: La Cantidad de Reposición ({cant_repo:.0f}) no puede ser menor al Lote de Packaging estándar ({lote_pkg_std:.0f}).")
