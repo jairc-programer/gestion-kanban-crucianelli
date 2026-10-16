@@ -1,13 +1,15 @@
 import pandas as pd
-from src.database.connection import get_connection
+from src.database.connection import get_engine
 
 def obtener_kanbans_df():
-    """Consulta el catálogo activo directamente desde Supabase PostgreSQL."""
-    conn = get_connection()
-    # Filtramos para leer únicamente registros con número de etiqueta K válido
-    df = pd.read_sql_query("SELECT * FROM kanbans WHERE numero_etiqueta LIKE 'K%%' ORDER BY id ASC", conn)
-    conn.close()
+    """Consulta la tabla 'kanbans' en Supabase a través del engine SQLAlchemy."""
+    engine = get_engine()
+    query = "SELECT * FROM kanbans WHERE numero_etiqueta LIKE 'K%%' ORDER BY id ASC"
     
+    with engine.connect() as conn:
+        df = pd.read_sql_query(query, conn)
+    
+    # Renombrar columnas para la interfaz de Streamlit
     df.rename(columns={
         'numero_etiqueta': 'N° Etiquetas',
         'tipo_etiqueta': 'Tipo Etiqueta',
@@ -30,9 +32,11 @@ def obtener_kanbans_df():
 
 def obtener_tracker_df():
     """Consulta la tabla 'tracker_solicitudes' en Supabase para la Página 4."""
-    conn = get_connection()
-    df = pd.read_sql_query("SELECT * FROM tracker_solicitudes ORDER BY id DESC", conn)
-    conn.close()
+    engine = get_engine()
+    query = "SELECT * FROM tracker_solicitudes ORDER BY id DESC"
+    
+    with engine.connect() as conn:
+        df = pd.read_sql_query(query, conn)
     
     df.rename(columns={
         'id_solicitud': 'ID Solicitud',
@@ -53,9 +57,11 @@ def obtener_tracker_df():
 
 def obtener_auditoria_df():
     """Consulta la tabla 'logs_auditoria' en Supabase para la Página 6."""
-    conn = get_connection()
-    df = pd.read_sql_query("SELECT * FROM logs_auditoria ORDER BY fecha_hora DESC", conn)
-    conn.close()
+    engine = get_engine()
+    query = "SELECT * FROM logs_auditoria ORDER BY fecha_hora DESC"
+    
+    with engine.connect() as conn:
+        df = pd.read_sql_query(query, conn)
     
     df.rename(columns={
         'fecha_hora': 'Fecha y Hora',
