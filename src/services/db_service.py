@@ -2,7 +2,7 @@ import pandas as pd
 from src.database.connection import get_engine
 
 def obtener_kanbans_df():
-    """Consulta la tabla 'kanbans' en Supabase a través del engine SQLAlchemy con inferencia de Tipo/Medio."""
+    """Consulta la tabla 'kanbans' en Supabase a través del engine SQLAlchemy con inferencia estricta de Tipo/Medio."""
     engine = get_engine()
     query = "SELECT * FROM kanbans WHERE numero_etiqueta LIKE 'K%%' ORDER BY id ASC"
     
@@ -10,17 +10,14 @@ def obtener_kanbans_df():
         df = pd.read_sql_query(query, conn)
     
     if not df.empty:
-        # Función para inferir Tipo Kanban según la regla: Reposición == Punto de Pedido
+        # Regla estricta de negocio:
+        # Si Cantidad Reposición == Cantidad Punto de Pedido (y > 0) -> GAVETA
+        # En cualquier otro caso -> TARJETA
         def inferir_tipo_kanban(row):
-            t_actual = str(row.get('tipo_kanban', '')).strip().upper()
-            # Si ya tiene asignado un valor explícito en BD, lo respetamos
-            if t_actual in ['GAVETA', 'TARJETA']:
-                return t_actual
-            
             try:
                 c_repo = float(row.get('cantidad_reposicion', 0))
                 c_pp = float(row.get('cantidad_punto_pedido', 0))
-                if c_repo == c_pp and c_repo > 0:
+                if c_repo > 0 and c_repo == c_pp:
                     return "GAVETA"
                 return "TARJETA"
             except (ValueError, TypeError):
