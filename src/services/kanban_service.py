@@ -21,6 +21,7 @@ def obtener_siguiente_codigo_k_transaccional(db: Session) -> str:
     return f"K{siguiente_num:08d}"
 
 def crear_nuevo_kanban(datos: dict, usuario_email: str) -> tuple[bool, str]:
+    """Crea un nuevo Kanban, registra la auditoría y genera la tarea para Logística."""
     with get_db_session() as db:
         # 1. Validar si ya existe la combinación Material + Puesto Destino
         existente = db.query(Kanban).filter(
@@ -82,12 +83,66 @@ def crear_nuevo_kanban(datos: dict, usuario_email: str) -> tuple[bool, str]:
             usuario_procesos=usuario_email
         ))
         
-        # Confirmar la transacción en Supabase
         db.commit()
         
     return True, f"Kanban {codigo_k} creado exitosamente."
 
+def modificar_kanban_existente(codigo_k: str, datos: dict, usuario_email: str) -> tuple[bool, str]:
+    """Modifica un Kanban existente, actualiza la auditoría y envía la tarea al Tracker Logístico."""
+    with get_db_session() as db:
+        kb = db.query(Kanban).filter(Kanban.numero_etiqueta == codigo_k).first()
+        if not kb:
+            return False, f"❌ El Kanban {codigo_k} no existe en el sistema."
+        
+        # Actualizar campos
+        kb.centro = datos.get('centro', kb.centro)
+        kb.tipo_etiqueta = datos.get('tipo_etiqueta', kb.tipo_etiqueta)
+        kb.tipo_kanban = datos.get('tipo_kanban', kb.tipo_kanban)
+        kb.medio = datos.get('medio', kb.medio)
+        kb.almacen_origen = datos.get('almacen_origen', kb.almacen_origen)
+        kb.almacen_destino = datos.get('almacen_destino', kb.almacen_destino)
+        kb.puesto_origen = datos.get('puesto_origen', kb.puesto_origen)
+        kb.puesto_destino = datos.get('puesto_destino', kb.puesto_destino).strip().upper()
+        kb.cantidad_reposicion = datos.get('cantidad_reposicion', kb.cantidad_reposicion)
+        kb.cantidad_punto_pedido = datos.get('cantidad_punto_pedido', kb.cantidad_punto_pedido)
+        kb.unidad_reposicion = datos.get('unidad_reposicion', kb.unidad_reposicion)
+        kb.tiempo_preparacion_dias = datos.get('tiempo_preparacion_dias', kb.tiempo_preparacion_dias)
+        kb.usuario_modificacion = usuario_email
+        
+        # 1. Registrar Auditoría
+        db.add(LogAuditoria(
+            accion="MODIFICACIÓN",
+            codigo_k=codigo_k,
+            material=kb.material,
+            medio=kb.medio,
+            almacen_destino=kb.almacen_destino,
+            puesto_destino=kb.puesto_destino,
+            detalle_cambio=datos.get('detalle_cambio', "Modificación de parámetros Kanban"),
+            usuario=usuario_email
+        ))
+        
+        # 2. Registrar Solicitud en Tracker Logístico
+        count_sol = db.query(func.count(TrackerSolicitud.id)).scalar() or 0
+        id_sol = f"SOL-{(count_sol + 1):05d}"
+        
+        db.add(TrackerSolicitud(
+            id_solicitud=id_sol,
+            material=kb.material,
+            codigo_k=codigo_k,
+            tipo_kb=kb.tipo_etiqueta,
+            puesto_destino=kb.puesto_destino,
+            medio=kb.medio,
+            cambio="MODIFICACIÓN",
+            accion_requerida="REVISAR Y REUBICAR",
+            usuario_procesos=usuario_email
+        ))
+        
+        db.commit()
+        
+    return True, f"Kanban {codigo_k} modificado exitosamente."
+
 def eliminar_kanban_seguro(codigo_k: str, email_usuario: str) -> tuple[bool, str]:
+    """Elimina un Kanban validando rol de Procesos, registra auditoría y avisa a Logística."""
     with get_db_session() as session:
         user = session.query(Usuario).filter(func.lower(Usuario.email) == email_usuario.strip().lower()).first()
         
@@ -99,6 +154,7 @@ def eliminar_kanban_seguro(codigo_k: str, email_usuario: str) -> tuple[bool, str
         if not kanban:
             return False, f"❌ El código {codigo_k} no existe en el sistema."
         
+        # 1. Registrar Auditoría
         session.add(LogAuditoria(
             accion="ELIMINACIÓN",
             codigo_k=kanban.numero_etiqueta,
@@ -108,6 +164,22 @@ def eliminar_kanban_seguro(codigo_k: str, email_usuario: str) -> tuple[bool, str
             puesto_destino=kanban.puesto_destino,
             detalle_cambio=f"Registro eliminado por {email_usuario}",
             usuario=email_usuario
+        ))
+        
+        # 2. Registrar Solicitud de Retiro en Tracker Logístico
+        count_sol = session.query(func.count(TrackerSolicitud.id)).scalar() or 0
+        id_sol = f"SOL-{(count_sol + 1):05d}"
+        
+        session.add(TrackerSolicitud(
+            id_solicitud=id_sol,
+            material=kanban.material,
+            codigo_k=kanban.numero_etiqueta,
+            tipo_kb=kanban.tipo_etiqueta,
+            puesto_destino=kanban.puesto_destino,
+            medio=kanban.medio,
+            cambio="ELIMINACIÓN",
+            accion_requerida="RETIRAR DE PUESTO",
+            usuario_procesos=email_usuario
         ))
         
         session.delete(kanban)
