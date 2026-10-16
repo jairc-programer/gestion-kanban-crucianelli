@@ -1,28 +1,37 @@
 import streamlit as st
 import pandas as pd
-import os
 from utils.style import aplicar_estilo_enterprise
+from src.services.db_service import obtener_auditoria_df
 
-# Aplicar estilo visual Enterprise (Modo Oscuro Suave)
 aplicar_estilo_enterprise()
 
 if 'usuario' not in st.session_state or not st.session_state['usuario']:
     st.stop()
 
-st.subheader("📜 Historial de Auditoría")
+st.subheader("📜 Historial de Auditoría de Cambios")
 
-LOG_FILE = "historial_cambios.csv"
+df_aud = obtener_auditoria_df()
 
-if os.path.exists(LOG_FILE):
-    df_log = pd.read_csv(LOG_FILE)
-    
-    # Sanitizar campos nulos o sin formato
-    df_log = df_log.fillna('-')
-    
-    # Mostrar primero los cambios más recientes
-    if not df_log.empty:
-        df_log = df_log.iloc[::-1].reset_index(drop=True)
-        
-    st.dataframe(df_log, use_container_width=True)
+if df_aud.empty:
+    st.info("ℹ️ Aún no se registraron movimientos en el historial de auditoría de Supabase.")
 else:
-    st.info("Aún no se registraron movimientos en el historial de auditoría.")
+    col1, col2 = st.columns(2)
+    with col1:
+        busq = st.text_input("🔍 Buscar por Código K, Material o Usuario:", key="aud_search_input").strip().upper()
+    with col2:
+        accion_sel = st.selectbox("Filtrar por Acción:", ["TODAS", "CREACIÓN", "MODIFICACIÓN", "ELIMINACIÓN"], key="aud_action_filter")
+
+    df_filt = df_aud.copy()
+    
+    if busq:
+        df_filt = df_filt[
+            df_filt['Código K'].fillna('').astype(str).str.contains(busq, case=False) |
+            df_filt['Material'].fillna('').astype(str).str.contains(busq, case=False) |
+            df_filt['Usuario'].fillna('').astype(str).str.contains(busq, case=False)
+        ]
+        
+    if accion_sel != "TODAS":
+        df_filt = df_filt[df_filt['Acción'].fillna('').astype(str).str.upper() == accion_sel]
+
+    st.caption(f"Mostrando **{len(df_filt)}** de **{len(df_aud)}** eventos de auditoría.")
+    st.dataframe(df_filt, use_container_width=True)

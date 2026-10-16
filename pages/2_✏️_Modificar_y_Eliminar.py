@@ -5,6 +5,7 @@ from src.services.db_service import obtener_kanbans_df
 from src.services.kanban_service import eliminar_kanban_seguro
 from src.database.connection import get_db_session
 from src.database.models import Kanban, LogAuditoria, TrackerSolicitud
+from sqlalchemy import func
 
 aplicar_estilo_enterprise()
 
@@ -152,13 +153,13 @@ if not df_live.empty:
                     if es_valido:
                         usr_act = st.session_state['usuario']['email']
                         cant_pp_final = m_cant_repo if m_tipo_soporte == "GAVETA" else m_cant_pp
+                        tipo_etiq_val = "KI" if m_es_interno else "KE"
                         
-                        # Guardar directo en Supabase via SQLAlchemy
                         with get_db_session() as db:
                             kb = db.query(Kanban).filter(Kanban.numero_etiqueta == k_sel).first()
                             if kb:
                                 kb.centro = m_centro
-                                kb.tipo_etiqueta = "KI" if m_es_interno else "KE"
+                                kb.tipo_etiqueta = tipo_etiq_val
                                 kb.tipo_kanban = m_tipo_soporte
                                 kb.medio = m_medio_str
                                 kb.almacen_origen = m_almacen_origen
@@ -171,7 +172,7 @@ if not df_live.empty:
                                 kb.tiempo_preparacion_dias = int(m_dias)
                                 kb.usuario_modificacion = usr_act
                                 
-                                # Auditoría
+                                # 1. Registrar Auditoría
                                 db.add(LogAuditoria(
                                     accion="MODIFICACIÓN",
                                     codigo_k=k_sel,
@@ -182,6 +183,23 @@ if not df_live.empty:
                                     detalle_cambio="Modificación de parámetros Kanban",
                                     usuario=usr_act
                                 ))
+                                
+                                # 2. Registrar Solicitud en el Tracker Logístico
+                                count_sol = db.query(func.count(TrackerSolicitud.id)).scalar() or 0
+                                id_sol = f"SOL-{(count_sol + 1):05d}"
+                                
+                                db.add(TrackerSolicitud(
+                                    id_solicitud=id_sol,
+                                    material=mat_sel,
+                                    codigo_k=k_sel,
+                                    tipo_kb=tipo_etiq_val,
+                                    puesto_destino=m_puesto_destino,
+                                    medio=m_medio_str,
+                                    cambio="MODIFICACIÓN",
+                                    accion_requerida="REVISAR Y REUBICAR",
+                                    usuario_procesos=usr_act
+                                ))
+                                
                                 db.commit()
                                 
                         st.session_state['msg_mod_exito'] = f"✅ ¡Kanban {k_sel} modificado exitosamente!"
