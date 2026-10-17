@@ -1,9 +1,10 @@
 import streamlit as st
 import pandas as pd
 import urllib.parse
+import streamlit.components.v1 as components
 from datetime import datetime
 from utils.style import aplicar_estilo_enterprise
-from src.services.db_service import obtener_tracker_df
+from src.services.db_service import obtener_tracker_df, obtener_kanbans_df
 from src.database.connection import get_db_session
 from src.database.models import TrackerSolicitud
 
@@ -14,11 +15,9 @@ if 'usuario' not in st.session_state or not st.session_state['usuario']:
 
 st.subheader("🚚 Tracker de Ejecución Logística")
 
-with st.sidebar:
-    st.markdown("### 🖨️ Configuración Impresora")
-    printer_ip = st.text_input("IP Rotuladora Brother (Wi-Fi):", value="192.168.1.150", help="Dirección IP asignada a la Brother QL-1110NWB en la red de la planta.")
-
+# Cargar tablas de referencia desde Supabase
 df_trk = obtener_tracker_df()
+df_kb = obtener_kanbans_df()
 
 if df_trk.empty:
     st.info("ℹ️ No hay tareas ni solicitudes pendientes registradas en el Tracker Logístico.")
@@ -64,6 +63,21 @@ else:
             solicitante = str(row.get('Usuario Solicitante', 'Sistema'))
             f_sol = str(row.get('Fecha Solicitud', '-'))
 
+            # Cruce dinámico con la base máster para extraer especificaciones técnicas
+            kb_match = df_kb[df_kb['N° Etiquetas'].fillna('').astype(str).str.upper() == k_code] if not df_kb.empty else pd.DataFrame()
+            
+            if not kb_match.empty:
+                info_kb = kb_match.iloc[0]
+                tipo_kb_val = str(info_kb.get('Tipo Kanban', 'TARJETA')).strip().upper()
+                c_repo_val = str(info_kb.get('Cantidad Reposicion', '-'))
+                c_pp_val = str(info_kb.get('Cantidad Punto de Pedido', '-'))
+                alm_origen_val = str(info_kb.get('Almacén Origen', '-'))
+            else:
+                tipo_kb_val = "TARJETA"
+                c_repo_val = "-"
+                c_pp_val = "-"
+                alm_origen_val = "-"
+
             st_sap = es_si(row.get('Estado SAP'))
             st_imp = es_si(row.get('Estado Impresion'))
             st_pst = es_si(row.get('Estado Puesto'))
@@ -71,15 +85,21 @@ else:
             badge = "🔴" if est_gen == "PENDIENTE" else ("🟡" if est_gen == "EN PROCESO" else "🟢")
 
             with st.expander(f"{badge} [{action_type}] Código K: {k_code} | Material: {mat_code} | Destino: {puesto_dest} ({est_gen})"):
-                c1, c_checks, c2 = st.columns([2, 2, 1])
+                c1, c_checks, c2 = st.columns([1.8, 1.8, 1.4])
                 
+                # --- DATOS DE LA SOLICITUD ---
                 with c1:
                     st.write(f"**Fecha Solicitud:** `{f_sol}`")
                     st.write(f"**Solicitante:** `{solicitante}`")
                     st.write(f"**Acción Requerida:** `{row.get('Acción Requerida', '-')}`")
                     st.write(f"**Medio Físico:** `{row.get('Medio', '-')}`")
+                    st.write(f"**Almacén Origen:** `{alm_origen_val}`")
                     st.write(f"**Puesto Destino:** `{puesto_dest}`")
+                    st.write(f"**Lote Reposición:** `{c_repo_val}`")
+                    if tipo_kb_val == "TARJETA":
+                        st.write(f"**Punto Pedido:** `{c_pp_val}`")
                 
+                # --- CONTROLES DE VERIFICACIÓN / CHECKS ---
                 with c_checks:
                     st.markdown("##### ⚙️ Acciones Logística")
                     
@@ -118,8 +138,50 @@ else:
                         st.toast(f"✅ Ubicación física registrada para {k_code}", icon="📍")
                         st.rerun()
 
+                # --- TARJETA ETIQUETA E IMPRESIÓN DIRECTA ---
                 with c2:
                     st.markdown("##### 🏷️ Etiqueta Kanban")
-                    qr_data = f"KANBAN|{k_code}|MAT:{mat_code}|DEST:{puesto_dest}"
-                    qr_url = f"https://quickchart.io/qr?text={urllib.parse.quote(qr_data)}&size=140"
-                    st.image(qr_url, width=140)
+                    
+                    # Payload dinámico para el QR
+                    if tipo_kb_val == "TARJETA":
+                        qr_payload = f"KANBAN|{k_code}|MAT:{mat_code}|REPO:{c_repo_val}|PP:{c_pp_val}|ORIG:{alm_origen_val}|DEST:{puesto_dest}"
+                    else:
+                        qr_payload = f"KANBAN|{k_code}|MAT:{mat_code}|REPO:{c_repo_val}|ORIG:{alm_origen_val}|DEST:{puesto_dest}"
+                        
+                    qr_url = f"https://quickchart.io/qr?text={urllib.parse.quote(qr_payload)}&size=120"
+
+                    linea_pp_html = f"<p style='margin:2px 0;'><b>Punto Pedido:</b> {c_pp_val}</p>" if tipo_kb_val == "TARJETA" else ""
+                    
+                    html_etiqueta = f"""
+                    <div id="print_area_{idx}" style="border: 2px solid #2b5c8f; border-radius: 6px; padding: 8px; background-color: #ffffff; color: #000000; font-family: Arial, sans-serif; text-align: center;">
+                        <h4 style="margin: 0; color: #2b5c8f; font-size: 15px; font-weight: bold;">CRUCIANELLI KANBAN</h4>
+                        <p style="margin: 2px 0; font-size: 14px; font-weight: bold;">{k_code} ({tipo_kb_val})</p>
+                        <img src="{qr_url}" width="105" style="margin: 4px 0;" />
+                        <div style="text-align: left; font-size: 11px; line-height: 1.25; border-top: 1px dashed #bbb; padding-top: 4px; margin-top: 4px;">
+                            <p style="margin: 2px 0;"><b>Material:</b> {mat_code}</p>
+                            <p style="margin: 2px 0;"><b>Lote Reposición:</b> {c_repo_val}</p>
+                            {linea_pp_html}
+                            <p style="margin: 2px 0;"><b>Origen:</b> {alm_origen_val} &rarr; <b>Destino:</b> {puesto_dest}</p>
+                        </div>
+                    </div>
+                    <div style="text-align: center; margin-top: 6px;">
+                        <button onclick="imprimirEtiqueta_{idx}()" style="background-color: #2b5c8f; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px;">
+                            🖨️ Imprimir Etiqueta
+                        </button>
+                    </div>
+                    <script>
+                    function imprimirEtiqueta_{idx}() {{
+                        var contenido = document.getElementById('print_area_{idx}').innerHTML;
+                        var ventana = window.open('', '', 'height=450,width=380');
+                        ventana.document.write('<html><head><title>Imprimir {k_code}</title>');
+                        ventana.document.write('<style>body{{font-family:Arial,sans-serif;text-align:center;padding:15px;}}</style>');
+                        ventana.document.write('</head><body>');
+                        ventana.document.write(contenido);
+                        ventana.document.write('</body></html>');
+                        ventana.document.close();
+                        ventana.focus();
+                        setTimeout(function() {{ ventana.print(); ventana.close(); }}, 400);
+                    }}
+                    </script>
+                    """
+                    components.html(html_etiqueta, height=340)
