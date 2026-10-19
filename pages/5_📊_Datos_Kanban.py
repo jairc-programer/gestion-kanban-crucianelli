@@ -94,7 +94,7 @@ if not df_live.empty:
         
         with col_sel:
             k_seleccionado = st.selectbox("Seleccionar Código Kanban a Reimprimir:", options=lista_k_disponibles)
-            st.info("ℹ️ Etiqueta configurada con parámetros SAP MIGO (Movimiento 313) para lectura automática por scanner en planta.")
+            st.info("ℹ️ Etiqueta adaptada al ancho completo del papel autoadhesivo de 103mm x 50mm.")
         
         if k_seleccionado:
             kb_info = df_live[df_live['N° Etiquetas'].astype(str) == k_seleccionado].iloc[0]
@@ -109,21 +109,21 @@ if not df_live.empty:
             puesto_dest = str(kb_info.get('Puesto de trabajo destino', kb_info.get('Puesto Destino', '-'))).strip().upper()
 
             with col_prev:
-                st.markdown("##### 🏷️ Vista Previa de Etiqueta (Format 103x50 mm)")
+                st.markdown("##### 🏷️ Vista Previa de Etiqueta (103mm x 50mm)")
                 
                 # Payload codificado para SAP MIGO Movimiento 313
                 qr_payload_sap = f"MIGO|313|M:{mat_code}|C:{c_repo_val}|O:{alm_origen_val}|D:{alm_dest_val}|K:{k_code}"
-                qr_url = f"https://quickchart.io/qr?text={urllib.parse.quote(qr_payload_sap)}&size=140"
+                qr_url = f"https://quickchart.io/qr?text={urllib.parse.quote(qr_payload_sap)}&size=150"
                 
                 linea_pp_html = f"<div><b>Lote Punto Pedido:</b> {c_pp_val}</div>" if tipo_kb_val == "TARJETA" else ""
 
-                # HTML/CSS optimizado para Brother QL-1110NWB (103mm x 50mm)
+                # HTML/CSS optimizado para ocupación total del área de impresión (103x50mm)
                 html_etiqueta = f"""
                 <div id="print_area_103x50" style="
-                    width: 380px; 
-                    height: 185px; 
-                    border: 2px solid #1E222B; 
-                    border-radius: 6px; 
+                    width: 385px; 
+                    height: 180px; 
+                    border: 2px solid #000000; 
+                    border-radius: 4px; 
                     padding: 8px 12px; 
                     background-color: #FFFFFF; 
                     color: #000000; 
@@ -133,42 +133,35 @@ if not df_live.empty:
                     flex-direction: column;
                     justify-content: space-between;
                 ">
-                    <!-- CABECERA -->
-                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #2b5c8f; padding-bottom: 3px;">
-                        <span style="font-size: 14px; font-weight: bold; color: #2b5c8f;">CRUCIANELLI KANBAN</span>
-                        <span style="font-size: 13px; font-weight: bold; background-color: #2b5c8f; color: #ffffff; padding: 2px 6px; border-radius: 3px;">{tipo_kb_val}</span>
+                    <!-- CABECERA INSTITUCIONAL -->
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000000; padding-bottom: 4px;">
+                        <span style="font-size: 13px; font-weight: 900; color: #000000; letter-spacing: 0.3px;">TALLERES METALÚRGICOS CRUCIANELLI</span>
+                        <span style="font-size: 11px; font-weight: bold; border: 1px solid #000000; color: #000000; padding: 2px 6px; border-radius: 3px;">{tipo_kb_val}</span>
                     </div>
 
-                    <!-- CUERPO CENTRAL -->
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
+                    <!-- CUERPO PRINCIPAL -->
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px;">
                         <!-- INFORMACIÓN TÉCNICA -->
-                        <div style="text-align: left; font-size: 12px; line-height: 1.35;">
-                            <div style="font-size: 15px; font-weight: bold; color: #000000; margin-bottom: 2px;">{k_code}</div>
-                            <div><b>Material:</b> <span style="font-size: 13px; font-weight: bold;">{mat_code}</span></div>
-                            <div><b>Lote Reposición:</b> <span style="font-size: 12px; font-weight: bold;">{c_repo_val}</span></div>
+                        <div style="text-align: left; font-size: 13px; line-height: 1.4;">
+                            <div style="font-size: 18px; font-weight: bold; color: #000000; margin-bottom: 3px;">{k_code}</div>
+                            <div><b>Material:</b> <span style="font-size: 14px; font-weight: bold;">{mat_code}</span></div>
+                            <div><b>Lote Reposición:</b> <span style="font-size: 13px; font-weight: bold;">{c_repo_val}</span></div>
                             {linea_pp_html}
                             <div><b>Origen:</b> {alm_origen_val} &rarr; <b>Destino:</b> {alm_dest_val}</div>
-                            <div><b>Puesto Destino:</b> <span style="font-size: 12px; font-weight: bold; color: #d62828;">{puesto_dest}</span></div>
+                            <div><b>Puesto Destino:</b> <span style="font-size: 13px; font-weight: bold;">{puesto_dest}</span></div>
                         </div>
 
-                        <!-- CÓDIGO QR PARA SAP MIGO -->
-                        <div style="text-align: center;">
-                            <img src="{qr_url}" width="115" height="115" style="display: block; margin: 0 auto;" />
-                            <span style="font-size: 8px; color: #555; font-weight: bold; display: block; margin-top: 1px;">SAP MIGO 313</span>
+                        <!-- CÓDIGO QR PARA LECTOR DE SAP -->
+                        <div style="text-align: center; margin-right: 5px;">
+                            <img src="{qr_url}" width="125" height="125" style="display: block; margin: 0 auto;" />
                         </div>
-                    </div>
-
-                    <!-- PIE DE ETIQUETA -->
-                    <div style="border-top: 1px dashed #888; padding-top: 2px; font-size: 9px; color: #444; display: flex; justify-content: space-between;">
-                        <span>Mov: SAP 313 (Transferencia)</span>
-                        <span>103mm x 50mm</span>
                     </div>
                 </div>
 
                 <!-- BOTÓN IMPRIMIR -->
                 <div style="margin-top: 10px; text-align: left;">
                     <button onclick="imprimirEtiqueta103x50()" style="
-                        background-color: #2b5c8f; 
+                        background-color: #d62828; 
                         color: white; 
                         border: none; 
                         padding: 8px 16px; 
@@ -184,11 +177,12 @@ if not df_live.empty:
                 <script>
                 function imprimirEtiqueta103x50() {{
                     var contenido = document.getElementById('print_area_103x50').outerHTML;
-                    var ventana = window.open('', '', 'height=400,width=480');
-                    ventana.document.write('<html><head><title>Imprimir Etiqueta {k_code}</title>');
+                    var ventana = window.open('', '', 'height=400,width=500');
+                    ventana.document.write('<html><head><title>Etiqueta {k_code}</title>');
                     ventana.document.write('<style>');
-                    ventana.document.write('@page {{ size: 103mm 50mm; margin: 0; }}');
-                    ventana.document.write('body {{ font-family: Arial, sans-serif; margin: 0; padding: 5px; display: flex; justify-content: center; align-items: center; }}');
+                    ventana.document.write('@page {{ size: 103mm 50mm; margin: 0mm; }}');
+                    ventana.document.write('html, body {{ margin: 0; padding: 0; width: 103mm; height: 50mm; overflow: hidden; background: #ffffff; display: flex; align-items: center; justify-content: center; }}');
+                    ventana.document.write('#print_area_103x50 {{ width: 100% !important; height: 100% !important; border: none !important; }}');
                     ventana.document.write('</style>');
                     ventana.document.write('</head><body>');
                     ventana.document.write(contenido);
@@ -199,7 +193,7 @@ if not df_live.empty:
                 }}
                 </script>
                 """
-                components.html(html_etiqueta, height=270)
+                components.html(html_etiqueta, height=250)
 
 else:
     st.info("ℹ️ No se encontraron registros en la base de datos de Supabase.")
