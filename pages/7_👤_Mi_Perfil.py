@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from utils.style import aplicar_estilo_enterprise
+from utils.style import aplicar_estilo_enterprise, formatear_fecha_arg
 from src.services.db_service import obtener_auditoria_df, obtener_tracker_df
 from src.database.connection import get_db_session
 from src.database.models import Usuario, LogAuditoria, TrackerSolicitud
@@ -63,6 +63,10 @@ st.markdown("### 📜 Mi Historial de Operaciones")
 df_aud = obtener_auditoria_df()
 
 if not df_aud.empty:
+    # Formatear timestamps a hora oficial de Argentina (UTC-3)
+    if 'Fecha y Hora' in df_aud.columns:
+        df_aud['Fecha y Hora'] = df_aud['Fecha y Hora'].apply(formatear_fecha_arg)
+
     df_mi_aud = df_aud[df_aud['Usuario'].fillna('').astype(str).str.lower() == usr_email.lower()]
     
     m1, m2 = st.columns(2)
