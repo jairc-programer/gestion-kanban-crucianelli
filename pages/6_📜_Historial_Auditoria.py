@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from utils.style import aplicar_estilo_enterprise
+from utils.style import aplicar_estilo_enterprise, formatear_fecha_arg
 from src.services.db_service import obtener_auditoria_df
 
 aplicar_estilo_enterprise()
@@ -15,6 +15,10 @@ df_aud = obtener_auditoria_df()
 if df_aud.empty:
     st.info("ℹ️ Aún no se registraron movimientos en el historial de auditoría de Supabase.")
 else:
+    # Formatear la columna 'Fecha y Hora' a hora local Argentina (UTC-3)
+    if 'Fecha y Hora' in df_aud.columns:
+        df_aud['Fecha y Hora'] = df_aud['Fecha y Hora'].apply(formatear_fecha_arg)
+
     col1, col2 = st.columns(2)
     with col1:
         busq = st.text_input("🔍 Buscar por Código K, Material o Usuario:", key="aud_search_input").strip().upper()
