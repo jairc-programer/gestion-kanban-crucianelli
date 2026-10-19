@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from src.database.models import Kanban, LogAuditoria, TrackerSolicitud, Usuario, RolUsuario
 from src.database.connection import get_db_session
+from utils.style import obtener_ahora_arg
 
 def obtener_siguiente_codigo_k_transaccional(db: Session) -> str:
     """Escanea Supabase y obtiene el número K mayor asignado + 1."""
@@ -34,6 +35,7 @@ def crear_nuevo_kanban(datos: dict, usuario_email: str) -> tuple[bool, str]:
         
         # 2. Generar el código K correlativo único basado en el máximo existente
         codigo_k = obtener_siguiente_codigo_k_transaccional(db)
+        ahora_arg = obtener_ahora_arg()
         
         # 3. Crear el nuevo registro Kanban
         nuevo_kb = Kanban(
@@ -55,7 +57,7 @@ def crear_nuevo_kanban(datos: dict, usuario_email: str) -> tuple[bool, str]:
         )
         db.add(nuevo_kb)
         
-        # 4. Registrar en Logs de Auditoría
+        # 4. Registrar en Logs de Auditoría con hora Argentina
         db.add(LogAuditoria(
             accion="CREACIÓN",
             codigo_k=codigo_k,
@@ -64,10 +66,11 @@ def crear_nuevo_kanban(datos: dict, usuario_email: str) -> tuple[bool, str]:
             almacen_destino=datos['almacen_destino'],
             puesto_destino=datos['puesto_destino'].strip().upper(),
             detalle_cambio="Creación inicial de registro en Supabase",
-            usuario=usuario_email
+            usuario=usuario_email,
+            fecha_hora=ahora_arg
         ))
         
-        # 5. Registrar en Tracker de Solicitudes
+        # 5. Registrar en Tracker de Solicitudes con hora Argentina
         count_sol = db.query(func.count(TrackerSolicitud.id)).scalar() or 0
         id_sol = f"SOL-{(count_sol + 1):05d}"
         
@@ -80,7 +83,8 @@ def crear_nuevo_kanban(datos: dict, usuario_email: str) -> tuple[bool, str]:
             medio=datos['medio'],
             cambio="CÓDIGO NUEVO",
             accion_requerida="ARMAR PEDIDO",
-            usuario_procesos=usuario_email
+            usuario_procesos=usuario_email,
+            fecha_solicitud=ahora_arg
         ))
         
         db.commit()
@@ -93,6 +97,8 @@ def modificar_kanban_existente(codigo_k: str, datos: dict, usuario_email: str) -
         kb = db.query(Kanban).filter(Kanban.numero_etiqueta == codigo_k).first()
         if not kb:
             return False, f"❌ El Kanban {codigo_k} no existe en el sistema."
+        
+        ahora_arg = obtener_ahora_arg()
         
         # Actualizar campos
         kb.centro = datos.get('centro', kb.centro)
@@ -108,6 +114,7 @@ def modificar_kanban_existente(codigo_k: str, datos: dict, usuario_email: str) -
         kb.unidad_reposicion = datos.get('unidad_reposicion', kb.unidad_reposicion)
         kb.tiempo_preparacion_dias = datos.get('tiempo_preparacion_dias', kb.tiempo_preparacion_dias)
         kb.usuario_modificacion = usuario_email
+        kb.fecha_modificacion = ahora_arg
         
         # 1. Registrar Auditoría
         db.add(LogAuditoria(
@@ -118,7 +125,8 @@ def modificar_kanban_existente(codigo_k: str, datos: dict, usuario_email: str) -
             almacen_destino=kb.almacen_destino,
             puesto_destino=kb.puesto_destino,
             detalle_cambio=datos.get('detalle_cambio', "Modificación de parámetros Kanban"),
-            usuario=usuario_email
+            usuario=usuario_email,
+            fecha_hora=ahora_arg
         ))
         
         # 2. Registrar Solicitud en Tracker Logístico
@@ -134,7 +142,8 @@ def modificar_kanban_existente(codigo_k: str, datos: dict, usuario_email: str) -
             medio=kb.medio,
             cambio="MODIFICACIÓN",
             accion_requerida="REVISAR Y REUBICAR",
-            usuario_procesos=usuario_email
+            usuario_procesos=usuario_email,
+            fecha_solicitud=ahora_arg
         ))
         
         db.commit()
@@ -154,6 +163,8 @@ def eliminar_kanban_seguro(codigo_k: str, email_usuario: str) -> tuple[bool, str
         if not kanban:
             return False, f"❌ El código {codigo_k} no existe en el sistema."
         
+        ahora_arg = obtener_ahora_arg()
+        
         # 1. Registrar Auditoría
         session.add(LogAuditoria(
             accion="ELIMINACIÓN",
@@ -163,7 +174,8 @@ def eliminar_kanban_seguro(codigo_k: str, email_usuario: str) -> tuple[bool, str
             almacen_destino=kanban.almacen_destino,
             puesto_destino=kanban.puesto_destino,
             detalle_cambio=f"Registro eliminado por {email_usuario}",
-            usuario=email_usuario
+            usuario=email_usuario,
+            fecha_hora=ahora_arg
         ))
         
         # 2. Registrar Solicitud de Retiro en Tracker Logístico
@@ -179,7 +191,8 @@ def eliminar_kanban_seguro(codigo_k: str, email_usuario: str) -> tuple[bool, str
             medio=kanban.medio,
             cambio="ELIMINACIÓN",
             accion_requerida="RETIRAR DE PUESTO",
-            usuario_procesos=email_usuario
+            usuario_procesos=email_usuario,
+            fecha_solicitud=ahora_arg
         ))
         
         session.delete(kanban)

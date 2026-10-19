@@ -2,8 +2,7 @@ import streamlit as st
 import pandas as pd
 import urllib.parse
 import streamlit.components.v1 as components
-from datetime import datetime
-from utils.style import aplicar_estilo_enterprise
+from utils.style import aplicar_estilo_enterprise, formatear_fecha_arg, obtener_ahora_arg
 from src.services.db_service import obtener_tracker_df, obtener_kanbans_df
 from src.database.connection import get_db_session
 from src.database.models import TrackerSolicitud
@@ -61,7 +60,9 @@ else:
             puesto_dest = str(row.get('Puesto Destino', '-')).strip().upper()
             est_gen = str(row.get('Estado General', 'PENDIENTE'))
             solicitante = str(row.get('Usuario Solicitante', 'Sistema'))
-            f_sol = str(row.get('Fecha Solicitud', '-'))
+            
+            # Formatear la fecha a zona horaria de Argentina
+            f_sol = formatear_fecha_arg(row.get('Fecha Solicitud'))
 
             # Cruce dinámico con la base máster para extraer especificaciones técnicas
             kb_match = df_kb[df_kb['N° Etiquetas'].fillna('').astype(str).str.upper() == k_code] if not df_kb.empty else pd.DataFrame()
@@ -121,7 +122,7 @@ else:
                             t_sol = db.query(TrackerSolicitud).filter(TrackerSolicitud.id_solicitud == sol_id).first()
                             if t_sol:
                                 t_sol.impreso = "SI" if chk2 else "NO"
-                                t_sol.fecha_impresion = datetime.utcnow() if chk2 else None
+                                t_sol.fecha_impresion = obtener_ahora_arg() if chk2 else None
                                 db.commit()
                         st.toast(f"✅ Estado Impresión actualizado para {k_code}", icon="🖨️")
                         st.rerun()
@@ -133,7 +134,7 @@ else:
                             t_sol = db.query(TrackerSolicitud).filter(TrackerSolicitud.id_solicitud == sol_id).first()
                             if t_sol:
                                 t_sol.estado_fisico = "OK" if chk3 else "Pendiente"
-                                t_sol.fecha_finalizacion = datetime.utcnow() if chk3 else None
+                                t_sol.fecha_finalizacion = obtener_ahora_arg() if chk3 else None
                                 db.commit()
                         st.toast(f"✅ Ubicación física registrada para {k_code}", icon="📍")
                         st.rerun()

@@ -1,4 +1,33 @@
 import streamlit as st
+from datetime import datetime
+import pytz
+import pandas as pd
+
+# Zona horaria oficial para Armstrong, Santa Fe, Argentina (UTC-3)
+ARG_TZ = pytz.timezone('America/Argentina/Buenos_Aires')
+
+def obtener_ahora_arg() -> datetime:
+    """Retorna el objeto datetime actual con la zona horaria oficial de Argentina (UTC-3)."""
+    return datetime.now(ARG_TZ)
+
+def formatear_fecha_arg(val) -> str:
+    """
+    Convierte cualquier fecha de la BD (incluso guardada en UTC)
+    a la hora local de Argentina en formato limpio 'YYYY-MM-DD HH:MM:SS'.
+    """
+    if not val or str(val).strip() in ['-', '', 'nan', 'None', 'NaT']:
+        return "-"
+    try:
+        dt = pd.to_datetime(val)
+        if dt.tzinfo is None:
+            # Si no tiene zona horaria asignada, se asume UTC de la nube y se convierte a UTC-3
+            dt = pytz.utc.localize(dt).astimezone(ARG_TZ)
+        else:
+            dt = dt.astimezone(ARG_TZ)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        # Respaldo limpio en caso de fallo
+        return str(val).split('.')[0]
 
 def aplicar_estilo_enterprise():
     st.markdown("""
