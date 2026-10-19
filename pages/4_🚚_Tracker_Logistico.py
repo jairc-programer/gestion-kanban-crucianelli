@@ -72,12 +72,14 @@ else:
                 tipo_kb_val = str(info_kb.get('Tipo Kanban', 'TARJETA')).strip().upper()
                 c_repo_val = str(info_kb.get('Cantidad Reposicion', '-'))
                 c_pp_val = str(info_kb.get('Cantidad Punto de Pedido', '-'))
-                alm_origen_val = str(info_kb.get('Almacén Origen', '-'))
+                alm_origen_val = str(info_kb.get('Almacén Origen', info_kb.get('Almacen Origen', '-'))).strip().upper()
+                alm_dest_val = str(info_kb.get('Almacén Destino', info_kb.get('Almacen Destino', '-'))).strip().upper()
             else:
                 tipo_kb_val = "TARJETA"
                 c_repo_val = "-"
                 c_pp_val = "-"
                 alm_origen_val = "-"
+                alm_dest_val = "-"
 
             st_sap = es_si(row.get('Estado SAP'))
             st_imp = es_si(row.get('Estado Impresion'))
@@ -139,43 +141,82 @@ else:
                         st.toast(f"✅ Ubicación física registrada para {k_code}", icon="📍")
                         st.rerun()
 
-                # --- TARJETA ETIQUETA E IMPRESIÓN DIRECTA ---
+                # --- TARJETA ETIQUETA E IMPRESIÓN DIRECTA (NUEVO FORMATO ESTÁNDAR 103x50mm) ---
                 with c2:
-                    st.markdown("##### 🏷️ Etiqueta Kanban")
+                    st.markdown("##### 🏷️ Etiqueta Kanban (103x50 mm)")
                     
-                    # Payload dinámico para el QR
-                    if tipo_kb_val == "TARJETA":
-                        qr_payload = f"KANBAN|{k_code}|MAT:{mat_code}|REPO:{c_repo_val}|PP:{c_pp_val}|ORIG:{alm_origen_val}|DEST:{puesto_dest}"
-                    else:
-                        qr_payload = f"KANBAN|{k_code}|MAT:{mat_code}|REPO:{c_repo_val}|ORIG:{alm_origen_val}|DEST:{puesto_dest}"
-                        
-                    qr_url = f"https://quickchart.io/qr?text={urllib.parse.quote(qr_payload)}&size=120"
+                    # Payload codificado para SAP MIGO Movimiento 313
+                    qr_payload_sap = f"MIGO|313|M:{mat_code}|C:{c_repo_val}|O:{alm_origen_val}|D:{alm_dest_val}|K:{k_code}"
+                    qr_url = f"https://quickchart.io/qr?text={urllib.parse.quote(qr_payload_sap)}&size=150"
 
-                    linea_pp_html = f"<p style='margin:2px 0;'><b>Punto Pedido:</b> {c_pp_val}</p>" if tipo_kb_val == "TARJETA" else ""
+                    linea_pp_html = f"<div><b>Lote Punto Pedido:</b> {c_pp_val}</div>" if tipo_kb_val == "TARJETA" else ""
                     
                     html_etiqueta = f"""
-                    <div id="print_area_{idx}" style="border: 2px solid #2b5c8f; border-radius: 6px; padding: 8px; background-color: #ffffff; color: #000000; font-family: Arial, sans-serif; text-align: center;">
-                        <h4 style="margin: 0; color: #2b5c8f; font-size: 15px; font-weight: bold;">CRUCIANELLI KANBAN</h4>
-                        <p style="margin: 2px 0; font-size: 14px; font-weight: bold;">{k_code} ({tipo_kb_val})</p>
-                        <img src="{qr_url}" width="105" style="margin: 4px 0;" />
-                        <div style="text-align: left; font-size: 11px; line-height: 1.25; border-top: 1px dashed #bbb; padding-top: 4px; margin-top: 4px;">
-                            <p style="margin: 2px 0;"><b>Material:</b> {mat_code}</p>
-                            <p style="margin: 2px 0;"><b>Lote Reposición:</b> {c_repo_val}</p>
-                            {linea_pp_html}
-                            <p style="margin: 2px 0;"><b>Origen:</b> {alm_origen_val} &rarr; <b>Destino:</b> {puesto_dest}</p>
+                    <div id="print_area_{idx}" style="
+                        width: 385px; 
+                        height: 180px; 
+                        border: 2px solid #000000; 
+                        border-radius: 4px; 
+                        padding: 8px 12px; 
+                        background-color: #FFFFFF; 
+                        color: #000000; 
+                        font-family: Arial, sans-serif; 
+                        box-sizing: border-box;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: space-between;
+                    ">
+                        <!-- CABECERA INSTITUCIONAL -->
+                        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000000; padding-bottom: 4px;">
+                            <span style="font-size: 12px; font-weight: 900; color: #000000; letter-spacing: 0.3px;">TALLERES METALÚRGICOS CRUCIANELLI</span>
+                            <span style="font-size: 11px; font-weight: bold; border: 1px solid #000000; color: #000000; padding: 2px 6px; border-radius: 3px;">{tipo_kb_val}</span>
+                        </div>
+
+                        <!-- CUERPO PRINCIPAL -->
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px;">
+                            <!-- INFORMACIÓN TÉCNICA -->
+                            <div style="text-align: left; font-size: 13px; line-height: 1.4;">
+                                <div style="font-size: 18px; font-weight: bold; color: #000000; margin-bottom: 3px;">{k_code}</div>
+                                <div><b>Material:</b> <span style="font-size: 14px; font-weight: bold;">{mat_code}</span></div>
+                                <div><b>Lote Reposición:</b> <span style="font-size: 13px; font-weight: bold;">{c_repo_val}</span></div>
+                                {linea_pp_html}
+                                <div><b>Origen:</b> {alm_origen_val} &rarr; <b>Destino:</b> {alm_dest_val}</div>
+                                <div><b>Puesto Destino:</b> <span style="font-size: 13px; font-weight: bold;">{puesto_dest}</span></div>
+                            </div>
+
+                            <!-- CÓDIGO QR PARA LECTOR DE SAP -->
+                            <div style="text-align: center; margin-right: 5px;">
+                                <img src="{qr_url}" width="125" height="125" style="display: block; margin: 0 auto;" />
+                            </div>
                         </div>
                     </div>
-                    <div style="text-align: center; margin-top: 6px;">
-                        <button onclick="imprimirEtiqueta_{idx}()" style="background-color: #2b5c8f; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px;">
+
+                    <!-- BOTÓN IMPRIMIR -->
+                    <div style="margin-top: 10px; text-align: left;">
+                        <button onclick="imprimirEtiqueta_{idx}()" style="
+                            background-color: #d62828; 
+                            color: white; 
+                            border: none; 
+                            padding: 8px 16px; 
+                            border-radius: 4px; 
+                            cursor: pointer; 
+                            font-weight: bold; 
+                            font-size: 13px;
+                        ">
                             🖨️ Imprimir Etiqueta
                         </button>
                     </div>
+
                     <script>
                     function imprimirEtiqueta_{idx}() {{
-                        var contenido = document.getElementById('print_area_{idx}').innerHTML;
-                        var ventana = window.open('', '', 'height=450,width=380');
-                        ventana.document.write('<html><head><title>Imprimir {k_code}</title>');
-                        ventana.document.write('<style>body{{font-family:Arial,sans-serif;text-align:center;padding:15px;}}</style>');
+                        var contenido = document.getElementById('print_area_{idx}').outerHTML;
+                        var ventana = window.open('', '', 'height=400,width=500');
+                        ventana.document.write('<html><head><title>Etiqueta {k_code}</title>');
+                        ventana.document.write('<style>');
+                        ventana.document.write('@page {{ size: 103mm 50mm; margin: 0mm; }}');
+                        ventana.document.write('html, body {{ margin: 0; padding: 0; width: 103mm; height: 50mm; overflow: hidden; background: #ffffff; display: flex; align-items: center; justify-content: center; }}');
+                        ventana.document.write('#print_area_{idx} {{ width: 100% !important; height: 100% !important; border: none !important; }}');
+                        ventana.document.write('</style>');
                         ventana.document.write('</head><body>');
                         ventana.document.write(contenido);
                         ventana.document.write('</body></html>');
@@ -185,4 +226,4 @@ else:
                     }}
                     </script>
                     """
-                    components.html(html_etiqueta, height=340)
+                    components.html(html_etiqueta, height=250)
