@@ -1,4 +1,5 @@
 import re
+import pandas as pd
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from src.database.models import Kanban, LogAuditoria, TrackerSolicitud, Usuario, RolUsuario
@@ -198,3 +199,122 @@ def eliminar_kanban_seguro(codigo_k: str, email_usuario: str) -> tuple[bool, str
         session.delete(kanban)
         session.commit()
         return True, f"✅ Kanban {codigo_k} eliminado exitosamente del sistema."
+
+def modificar_kanbans_masivo_desde_df(df_carga: pd.DataFrame, usuario_email: str) -> tuple[int, int, list]:
+    """
+    Procesa un DataFrame para actualización masiva de Kanbans.
+    Retorna: (total_exitos, total_errores, lista_detalles_error)
+    """
+    exitos = 0
+    errores = 0
+    detalles_error = []
+    
+    mapeo_columnas = {
+        'n° etiquetas': 'numero_etiqueta',
+        'código k': 'numero_etiqueta',
+        'codigo k': 'numero_etiqueta',
+        'tipo etiqueta': 'tipo_etiqueta',
+        'tipo kanban': 'tipo_kanban',
+        'medio': 'medio',
+        'material': 'material',
+        'centro': 'centro',
+        'almacén origen': 'almacen_origen',
+        'almacen origen': 'almacen_origen',
+        'almacén destino': 'almacen_destino',
+        'almacen destino': 'almacen_destino',
+        'puesto trabajo origen': 'puesto_origen',
+        'puesto de trabajo origen': 'puesto_origen',
+        'puesto trabajo destino': 'puesto_destino',
+        'puesto de trabajo destino': 'puesto_destino',
+        'cantidad reposicion': 'cantidad_reposicion',
+        'cantidad reposición': 'cantidad_reposicion',
+        'unidad reposicion': 'unidad_reposicion',
+        'unidad reposición': 'unidad_reposicion',
+        'cantidad punto de pedido': 'cantidad_punto_pedido',
+        'tiempo preparación abast. (en días)': 'tiempo_preparacion_dias',
+        'tiempo preparacion abast. (en dias)': 'tiempo_preparacion_dias'
+    }
+
+    cols_normalizadas = {str(col).strip().lower(): col for col in df_carga.columns}
+    
+    col_k_excel = None
+    for k_alias in ['n° etiquetas', 'código k', 'codigo k']:
+        if k_alias in cols_normalizadas:
+            col_k_excel = cols_normalizadas[k_alias]
+            break
+
+    if not col_k_excel:
+        return 0, len(df_carga), ["❌ No se encontró la columna 'N° Etiquetas' o 'Código K' en el archivo cargado."]
+
+    ahora_arg = obtener_ahora_arg()
+
+    with get_db_session() as db:
+        count_sol = db.query(func.count(TrackerSolicitud.id)).scalar() or 0
+
+        for idx, row in df_carga.iterrows():
+            k_code = str(row.get(col_k_excel, '')).strip().upper()
+            if not k_code or k_code in ['NAN', 'NONE', '-']:
+                continue
+
+            kb = db.query(Kanban).filter(Kanban.numero_etiqueta == k_code).first()
+            if not kb:
+                errores += 1
+                detalles_error.append(f"Fila {idx+2}: El Código K '{k_code}' no existe en Supabase.")
+                continue
+
+            try:
+                for col_orig, col_orm in mapeo_columnas.items():
+                    if col_orig in cols_normalizadas:
+                        val = row.get(cols_normalizadas[col_orig])
+                        if pd.notna(val) and str(val).strip() not in ['', 'nan', 'None']:
+                            val_str = str(val).strip()
+                            if col_orm in ['cantidad_reposicion', 'cantidad_punto_pedido']:
+                                setattr(kb, col_orm, float(val_str))
+                            elif col_orm == 'tiempo_preparacion_dias':
+                                setattr(kb, col_orm, int(float(val_str)))
+                            elif col_orm in ['material', 'puesto_destino', 'almacen_origen', 'almacen_destino']:
+                                setattr(kb, col_orm, val_str.upper())
+                            else:
+                                setattr(kb, col_orm, val_str)
+
+                kb.usuario_modificacion = usuario_email
+                kb.fecha_modificacion = ahora_arg
+
+                # 1. Auditoría
+                db.add(LogAuditoria(
+                    accion="MODIFICACIÓN MASIVA",
+                    codigo_k=k_code,
+                    material=kb.material,
+                    medio=kb.medio,
+                    almacen_destino=kb.almacen_destino,
+                    puesto_destino=kb.puesto_destino,
+                    detalle_cambio=f"Actualización masiva vía archivo Excel por {usuario_email}",
+                    usuario=usuario_email,
+                    fecha_hora=ahora_arg
+                ))
+
+                # 2. Solicitud en Tracker Logístico
+                count_sol += 1
+                id_sol = f"SOL-{count_sol:05d}"
+                db.add(TrackerSolicitud(
+                    id_solicitud=id_sol,
+                    material=kb.material,
+                    codigo_k=k_code,
+                    tipo_kb=kb.tipo_etiqueta,
+                    puesto_destino=kb.puesto_destino,
+                    medio=kb.medio,
+                    cambio="MODIFICACIÓN MASIVA",
+                    accion_requerida="REVISAR Y REUBICAR",
+                    usuario_procesos=usuario_email,
+                    fecha_solicitud=ahora_arg
+                ))
+
+                exitos += 1
+
+            except Exception as e:
+                errores += 1
+                detalles_error.append(f"Fila {idx+2} ({k_code}): Error de formato ({str(e)})")
+
+        db.commit()
+
+    return exitos, errores, detalles_error
