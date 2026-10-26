@@ -4,18 +4,18 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-from utils.style import aplicar_estilo_enterprise
+from utils.style import aplicar_estilo_enterprise, obtener_ahora_arg
 from src.services.db_service import obtener_kanbans_df, obtener_tracker_df
 
-# Aplicar estilo visual Enterprise (Modo Oscuro Suave)
+# Aplicar estilo visual Enterprise
 aplicar_estilo_enterprise()
 
 if 'usuario' not in st.session_state or not st.session_state['usuario']:
     st.stop()
 
-st.subheader("📈 Panel de Indicadores Clave (KPIs)")
+st.subheader("📈 Panel de Indicadores Clave (KPIs Ejecutivos)")
 
-# --- 1. CARGA Y PREPARACIÓN DE DATOS DESDE SUPABASE ---
+# --- 1. CARGA Y PREPARACIÓN DE DATOS DE KANBANS ---
 df_kb = obtener_kanbans_df()
 
 if not df_kb.empty:
@@ -23,12 +23,47 @@ if not df_kb.empty:
     total_gaveta = len(df_kb[df_kb['Tipo Kanban'] == "GAVETA"])
     total_tarjeta = len(df_kb[df_kb['Tipo Kanban'] == "TARJETA"])
 
-    m1, m2, m3 = st.columns(3)
-    m1.metric("📦 Total Kanbans Activos", total_kanbans)
-    m2.metric("📥 Total Gavetas", total_gaveta)
-    m3.metric("🏷️ Total Tarjetas", total_tarjeta)
+    # Lógica de Semáforo de Actividad (Nivel Directivo)
+    ahora_actual = obtener_ahora_arg().replace(tzinfo=None)
 
-    col_g1, col_g2 = st.columns([1, 1])
+    def evaluar_inactividad(fecha_val):
+        if pd.isna(fecha_val) or str(fecha_val).strip() in ['-', '', 'nan', 'None', 'NaT']:
+            return "🔴 Inactivo (> 6m)"
+        try:
+            dt = pd.to_datetime(fecha_val)
+            if hasattr(dt, 'tz') and dt.tz is not None:
+                dt = dt.tz_localize(None)
+            dias = (ahora_actual - dt).days
+            if dias <= 90:
+                return "🟢 Activo Reciente (<= 3m)"
+            elif 90 < dias <= 180:
+                return "🟡 Moderado (3 a 6m)"
+            else:
+                return "🔴 Inactivo (> 6m)"
+        except Exception:
+            return "🔴 Inactivo (> 6m)"
+
+    col_fecha_mod = 'Fecha Modificación' if 'Fecha Modificación' in df_kb.columns else 'fecha_modificacion'
+    if col_fecha_mod in df_kb.columns:
+        df_kb['Estado de Actividad'] = df_kb[col_fecha_mod].apply(evaluar_inactividad)
+    else:
+        df_kb['Estado de Actividad'] = "🔴 Inactivo (> 6m)"
+
+    tot_activos_rec = len(df_kb[df_kb['Estado de Actividad'].str.contains('🟢')])
+    tot_moderados = len(df_kb[df_kb['Estado de Actividad'].str.contains('🟡')])
+    tot_inactivos = len(df_kb[df_kb['Estado de Actividad'].str.contains('🔴')])
+
+    # TARJETAS DE MÉTRICAS GLOBALES
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("📦 Total Kanbans", total_kanbans)
+    m2.metric("📥 Gavetas / 🏷️ Tarjetas", f"{total_gaveta} / {total_tarjeta}")
+    m3.metric("🟢 Activo Reciente (<=3m)", tot_activos_rec, f"{((tot_activos_rec/total_kanbans)*100):.1f}%")
+    m4.metric("🟡 Moderado (3 a 6m)", tot_moderados, f"{((tot_moderados/total_kanbans)*100):.1f}%")
+    m5.metric("🔴 Inactivo (>6m)", tot_inactivos, f"{((tot_inactivos/total_kanbans)*100):.1f}%", delta_color="inverse")
+
+    st.markdown("---")
+    
+    col_g1, col_g2, col_g3 = st.columns([1, 1, 1])
 
     with col_g1:
         st.markdown("##### 🍕 Distribución por Tipo de Kanban")
@@ -40,13 +75,32 @@ if not df_kb.empty:
             hole=0.4
         )
         fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-        fig_pie.update_layout(margin=dict(t=20, b=20, l=10, r=10), height=320)
+        fig_pie.update_layout(margin=dict(t=20, b=20, l=10, r=10), height=300)
         st.plotly_chart(fig_pie, use_container_width=True)
 
     with col_g2:
-        st.markdown("##### 🏭 Cantidad de Kanbans por Almacén Destino")
+        st.markdown("##### 🚦 Salud de Catálogo (Inactividad)")
+        counts_act = df_kb['Estado de Actividad'].value_counts().reset_index()
+        counts_act.columns = ['Estado', 'Cantidad']
+        fig_sem = px.bar(
+            counts_act,
+            x='Estado',
+            y='Cantidad',
+            text='Cantidad',
+            color='Estado',
+            color_discrete_map={
+                '🟢 Activo Reciente (<= 3m)': '#2a9d8f',
+                '🟡 Moderado (3 a 6m)': '#e9c46a',
+                '🔴 Inactivo (> 6m)': '#e76f51'
+            }
+        )
+        fig_sem.update_traces(textposition='outside')
+        fig_sem.update_layout(margin=dict(t=20, b=20, l=10, r=10), showlegend=False, height=300)
+        st.plotly_chart(fig_sem, use_container_width=True)
+
+    with col_g3:
+        st.markdown("##### 🏭 Kanbans por Almacén Destino")
         almacenes_objetivo = ["P110", "P120", "P130", "P140", "P150", "P160", "P180", "P190"]
-        
         col_alm = 'Almacen Destino' if 'Almacen Destino' in df_kb.columns else 'Almacén Destino'
         df_alm = df_kb[df_kb[col_alm].fillna('').isin(almacenes_objetivo)] if col_alm in df_kb.columns else pd.DataFrame()
         
@@ -63,10 +117,8 @@ if not df_kb.empty:
                 color_discrete_sequence=px.colors.sequential.Blues_r
             )
             fig_alm.update_traces(textposition='outside')
-            fig_alm.update_layout(margin=dict(t=20, b=20, l=10, r=10), showlegend=False, height=320)
+            fig_alm.update_layout(margin=dict(t=20, b=20, l=10, r=10), showlegend=False, height=300)
             st.plotly_chart(fig_alm, use_container_width=True)
-        else:
-            st.info("No se encontraron registros para los almacenes destino principales.")
 
     st.markdown("##### 📍 Cantidad de Kanbans por Puesto de Trabajo Destino (Top 15)")
     col_puesto = 'Puesto de trabajo destino' if 'Puesto de trabajo destino' in df_kb.columns else 'Puesto Destino'
@@ -83,12 +135,12 @@ if not df_kb.empty:
             color='Cantidad',
             color_continuous_scale='Viridis'
         )
-        fig_puesto.update_layout(yaxis=dict(autorange="reversed"), margin=dict(t=20, b=20, l=10, r=10), height=380)
+        fig_puesto.update_layout(yaxis=dict(autorange="reversed"), margin=dict(t=20, b=20, l=10, r=10), height=360)
         st.plotly_chart(fig_puesto, use_container_width=True)
 
 # --- 2. ANÁLISIS DE SLAs Y EVOLUCIÓN TEMPORAL LOGÍSTICA ---
 st.markdown("---")
-st.markdown("### ⏱️ Tiempos de Respuesta y Cumplimiento de SLAs")
+st.markdown("### ⏱️ Tiempos de Respuesta y Cumplimiento de SLAs Logísticos")
 
 df_trk = obtener_tracker_df()
 
