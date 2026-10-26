@@ -4,7 +4,7 @@ import io
 import urllib.parse
 import streamlit.components.v1 as components
 from datetime import datetime, timedelta
-from utils.style import aplicar_estilo_enterprise
+from utils.style import aplicar_estilo_enterprise, formatear_fecha_arg
 from src.services.db_service import obtener_kanbans_df
 
 # Aplicar estilo visual Enterprise
@@ -37,7 +37,8 @@ if not df_live.empty:
 
     if 'Fecha Modificación' in df_live.columns:
         df_live['Estado de Actividad'] = df_live['Fecha Modificación'].apply(evaluar_inactividad)
-        df_live['Última Actualización'] = df_live['Fecha Modificación'].fillna('Sin Fecha')
+        df_live['Última Actualización'] = df_live['Fecha Modificación'].apply(formatear_fecha_arg)
+        df_live['Fecha Modificación'] = df_live['Fecha Modificación'].apply(formatear_fecha_arg)
     else:
         df_live['Estado de Actividad'] = "🔴 Inactivo (> 6 meses)"
         df_live['Última Actualización'] = "Sin Fecha"
