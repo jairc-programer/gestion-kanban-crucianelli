@@ -15,28 +15,34 @@ if 'usuario' not in st.session_state or not st.session_state['usuario']:
 
 st.subheader("📊 Base General de Kanbans")
 
-# Cargar catálogo máster e historial de auditoría directamente desde Supabase
+# Cargar catálogo máster e historial de auditoría desde Supabase
 df_live = obtener_kanbans_df()
 df_aud = obtener_auditoria_df()
 
 if not df_live.empty:
     ahora_actual = obtener_ahora_arg().replace(tzinfo=None)
 
-    # --- 1. DETERMINAR FECHA DE ALTA (CREACIÓN INICIAL) ---
-    dict_fechas_alta = {}
+    # --- 1. LÓGICA PRECISA DE FECHA DE ALTA ---
+    dict_fechas_creacion = {}
+    
     if not df_aud.empty and 'Código K' in df_aud.columns and 'Fecha y Hora' in df_aud.columns:
-        # Agrupar auditoría por Código K y obtener el evento más antiguo (Creación / Primer registro)
-        aud_ordenado = df_aud.sort_values(by='Fecha y Hora', ascending=True)
-        dict_fechas_alta = aud_ordenado.groupby('Código K')['Fecha y Hora'].first().to_dict()
+        # Filtrar únicamente los eventos de creación en auditoría
+        df_creaciones = df_aud[df_aud['Acción'].fillna('').astype(str).str.upper() == 'CREACIÓN']
+        if not df_creaciones.empty:
+            df_creaciones_ord = df_creaciones.sort_values(by='Fecha y Hora', ascending=True)
+            dict_fechas_creacion = df_creaciones_ord.groupby('Código K')['Fecha y Hora'].first().to_dict()
 
-    def obtener_fecha_alta(row):
+    FECHA_CARGA_INICIAL = "2026-10-15 15:02:29"
+
+    def determinar_fecha_alta(row):
         k_code = str(row.get('N° Etiquetas', '')).strip().upper()
-        if k_code in dict_fechas_alta:
-            return dict_fechas_alta[k_code]
-        # Respaldo: Si no tiene historial previo, la fecha de alta coincide con su fecha registrada
-        return row.get('Fecha Modificación', None)
+        # 1. Si existe un evento de CREACIÓN registrado en auditoría, usar esa fecha
+        if k_code in dict_fechas_creacion:
+            return dict_fechas_creacion[k_code]
+        # 2. Si no tiene evento de creación (registro de la migración base), asignar la fecha inicial fija
+        return FECHA_CARGA_INICIAL
 
-    df_live['Fecha de Alta'] = df_live.apply(obtener_fecha_alta, axis=1)
+    df_live['Fecha de Alta'] = df_live.apply(determinar_fecha_alta, axis=1)
 
     # --- 2. LÓGICA DE CLASIFICACIÓN TIPO SEMÁFORO SEGÚN INACTIVIDAD ---
     def evaluar_inactividad(fecha_val):
@@ -63,7 +69,7 @@ if not df_live.empty:
         df_live['Última Modificación'] = df_live['Fecha Modificación'].apply(formatear_fecha_arg)
         df_live['Fecha de Alta'] = df_live['Fecha de Alta'].apply(formatear_fecha_arg)
         
-        # Eliminar columna duplicada antigua
+        # Eliminar columna duplicada/antigua
         if 'Última Actualización' in df_live.columns:
             df_live.drop(columns=['Última Actualización'], inplace=True)
         if 'Fecha Modificación' in df_live.columns:
@@ -71,7 +77,7 @@ if not df_live.empty:
     else:
         df_live['Estado de Actividad'] = "🔴 Inactivo (> 6 meses)"
         df_live['Última Modificación'] = "Sin Fecha"
-        df_live['Fecha de Alta'] = "Sin Fecha"
+        df_live['Fecha de Alta'] = FECHA_CARGA_INICIAL
 
     # --- FILTROS DE BÚSQUEDA ---
     with st.container(border=True):
