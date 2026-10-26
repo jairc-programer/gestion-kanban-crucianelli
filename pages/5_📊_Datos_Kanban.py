@@ -3,9 +3,9 @@ import pandas as pd
 import io
 import urllib.parse
 import streamlit.components.v1 as components
-from datetime import datetime, timedelta
-from utils.style import aplicar_estilo_enterprise, formatear_fecha_arg
-from src.services.db_service import obtener_kanbans_df
+from datetime import datetime
+from utils.style import aplicar_estilo_enterprise, formatear_fecha_arg, obtener_ahora_arg
+from src.services.db_service import obtener_kanbans_df, obtener_auditoria_df
 
 # Aplicar estilo visual Enterprise
 aplicar_estilo_enterprise()
@@ -15,33 +15,63 @@ if 'usuario' not in st.session_state or not st.session_state['usuario']:
 
 st.subheader("📊 Base General de Kanbans")
 
-# Cargar catálogo directamente desde Supabase
+# Cargar catálogo máster e historial de auditoría directamente desde Supabase
 df_live = obtener_kanbans_df()
+df_aud = obtener_auditoria_df()
 
 if not df_live.empty:
-    # --- INDICADOR DE INACTIVIDAD (> 6 MESES / 180 DÍAS) ---
-    fecha_limite = datetime.now() - timedelta(days=180)
+    ahora_actual = obtener_ahora_arg().replace(tzinfo=None)
 
+    # --- 1. DETERMINAR FECHA DE ALTA (CREACIÓN INICIAL) ---
+    dict_fechas_alta = {}
+    if not df_aud.empty and 'Código K' in df_aud.columns and 'Fecha y Hora' in df_aud.columns:
+        # Agrupar auditoría por Código K y obtener el evento más antiguo (Creación / Primer registro)
+        aud_ordenado = df_aud.sort_values(by='Fecha y Hora', ascending=True)
+        dict_fechas_alta = aud_ordenado.groupby('Código K')['Fecha y Hora'].first().to_dict()
+
+    def obtener_fecha_alta(row):
+        k_code = str(row.get('N° Etiquetas', '')).strip().upper()
+        if k_code in dict_fechas_alta:
+            return dict_fechas_alta[k_code]
+        # Respaldo: Si no tiene historial previo, la fecha de alta coincide con su fecha registrada
+        return row.get('Fecha Modificación', None)
+
+    df_live['Fecha de Alta'] = df_live.apply(obtener_fecha_alta, axis=1)
+
+    # --- 2. LÓGICA DE CLASIFICACIÓN TIPO SEMÁFORO SEGÚN INACTIVIDAD ---
     def evaluar_inactividad(fecha_val):
-        if pd.isna(fecha_val) or str(fecha_val).strip() in ['-', '', 'nan', 'None']:
+        if pd.isna(fecha_val) or str(fecha_val).strip() in ['-', '', 'nan', 'None', 'NaT']:
             return "🔴 Inactivo (> 6 meses)"
         try:
             dt = pd.to_datetime(fecha_val)
             if hasattr(dt, 'tz') and dt.tz is not None:
                 dt = dt.tz_localize(None)
-            if dt < fecha_limite:
+            
+            dias_transcurridos = (ahora_actual - dt).days
+
+            if dias_transcurridos <= 90:
+                return "🟢 Activo Reciente (<= 3 meses)"
+            elif 90 < dias_transcurridos <= 180:
+                return "🟡 Moderado (3 a 6 meses)"
+            else:
                 return "🔴 Inactivo (> 6 meses)"
-            return "🟢 Activo Reciente"
         except Exception:
             return "🔴 Inactivo (> 6 meses)"
 
     if 'Fecha Modificación' in df_live.columns:
         df_live['Estado de Actividad'] = df_live['Fecha Modificación'].apply(evaluar_inactividad)
-        df_live['Última Actualización'] = df_live['Fecha Modificación'].apply(formatear_fecha_arg)
-        df_live['Fecha Modificación'] = df_live['Fecha Modificación'].apply(formatear_fecha_arg)
+        df_live['Última Modificación'] = df_live['Fecha Modificación'].apply(formatear_fecha_arg)
+        df_live['Fecha de Alta'] = df_live['Fecha de Alta'].apply(formatear_fecha_arg)
+        
+        # Eliminar columna duplicada antigua
+        if 'Última Actualización' in df_live.columns:
+            df_live.drop(columns=['Última Actualización'], inplace=True)
+        if 'Fecha Modificación' in df_live.columns:
+            df_live.drop(columns=['Fecha Modificación'], inplace=True)
     else:
         df_live['Estado de Actividad'] = "🔴 Inactivo (> 6 meses)"
-        df_live['Última Actualización'] = "Sin Fecha"
+        df_live['Última Modificación'] = "Sin Fecha"
+        df_live['Fecha de Alta'] = "Sin Fecha"
 
     # --- FILTROS DE BÚSQUEDA ---
     with st.container(border=True):
@@ -53,7 +83,15 @@ if not df_live.empty:
         with c2:
             filtro_mat = st.text_input("🔍 Código Material:", placeholder="ej. CM001462").strip().upper()
         with c3:
-            filtro_est = st.selectbox("Status Actividad:", ["TODOS", "🟢 Activo Reciente", "🔴 Inactivo (> 6 meses)"])
+            filtro_est = st.selectbox(
+                "Status Actividad:", 
+                [
+                    "TODOS", 
+                    "🟢 Activo Reciente (<= 3 meses)", 
+                    "🟡 Moderado (3 a 6 meses)", 
+                    "🔴 Inactivo (> 6 meses)"
+                ]
+            )
 
     df_filtrado = df_live.copy()
 
