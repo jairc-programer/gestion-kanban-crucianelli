@@ -1,6 +1,12 @@
 import hashlib
 import bcrypt
+import re
 from src.database.connection import get_connection
+
+def es_email_valido(email: str) -> bool:
+    """Valida que el texto tenga una estructura de correo electrónico válida (ejemplo@dominio.com)."""
+    patron = r'^[\w\.-]+@[\w\.-]+\.\w+$'
+    return bool(re.match(patron, email.strip().lower()))
 
 def verificar_password(password_plana: str, pass_db: str) -> bool:
     """Verifica la contraseña contra Bcrypt (Supabase) o SHA-256."""
@@ -54,8 +60,9 @@ def registrar_usuario(email: str, password: str):
     email_clean = email.strip().lower()
     pass_clean = password.strip()
     
-    if not email_clean.endswith("@crucianelli.com"):
-        return False, "Debe utilizar un correo corporativo (@crucianelli.com)."
+    # Validación estándar de formato de correo (sin restringir dominio)
+    if not es_email_valido(email_clean):
+        return False, "Por favor ingrese un correo electrónico válido."
         
     conn = get_connection()
     cursor = conn.cursor()
@@ -69,6 +76,8 @@ def registrar_usuario(email: str, password: str):
         return False, "El usuario ya se encuentra registrado. Inicie sesión directamente."
     
     pass_hash = hash_password(pass_clean)
+    
+    # Todo usuario nuevo registrado desde la app asumirá el rol restrictivo 'Consulta'
     rol_asignado = "CONSULTA" if is_pg else "Consulta"
     
     try:

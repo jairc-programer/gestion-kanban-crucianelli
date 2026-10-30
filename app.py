@@ -3,14 +3,14 @@ from src.database.connection import init_db
 from src.services.auth_service import autenticar_usuario, registrar_usuario
 from utils.style import aplicar_estilo_enterprise
 
-# Configuración inicial de página (Debe ir lo más arriba posible)
+# Configuración inicial de página
 st.set_page_config(
     page_title="Gestor de Kanbans - Crucianelli",
     page_icon="📦",
     layout="wide"
 )
 
-# Inicializar Base de Datos (Crea tablas si no existen y siembra usuarios)
+# Inicializar Base de Datos
 init_db()
 
 # Aplicar estilo visual Enterprise
@@ -30,7 +30,7 @@ if not st.session_state['usuario']:
         
         with tab_login:
             with st.form("form_login"):
-                email = st.text_input("Correo Corporativo (@crucianelli.com):", key="log_email")
+                email = st.text_input("Correo Electrónico:", key="log_email")
                 password = st.text_input("Contraseña:", type="password", key="log_pass")
                 btn_login = st.form_submit_button("Ingresar", type="primary", use_container_width=True)
                 
@@ -54,7 +54,7 @@ if not st.session_state['usuario']:
 
         with tab_reg:
             with st.form("form_registro"):
-                reg_email = st.text_input("Correo Corporativo (@crucianelli.com):", key="reg_email")
+                reg_email = st.text_input("Correo Electrónico:", key="reg_email")
                 reg_pass1 = st.text_input("Contraseña:", type="password", key="reg_p1")
                 reg_pass2 = st.text_input("Confirmar Contraseña:", type="password", key="reg_p2")
                 btn_reg = st.form_submit_button("Crear Cuenta", use_container_width=True)
