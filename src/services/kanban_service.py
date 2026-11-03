@@ -151,6 +151,50 @@ def modificar_kanban_existente(codigo_k: str, datos: dict, usuario_email: str) -
         
     return True, f"Kanban {codigo_k} modificado exitosamente."
 
+def solicitar_reimpresion_kanban(codigo_k: str, motivo: str, email_usuario: str) -> tuple[bool, str]:
+    """Crea una solicitud de reimpresión de etiqueta en el Tracker Logístico y registra la auditoría."""
+    with get_db_session() as db:
+        kb = db.query(Kanban).filter(Kanban.numero_etiqueta == codigo_k).first()
+        if not kb:
+            return False, f"❌ El Kanban {codigo_k} no existe en el sistema."
+        
+        ahora_arg = obtener_ahora_arg()
+        motivo_clean = motivo.strip() if motivo else "Sin especificación de motivo"
+        detalle_motivo = f"Solicitud de reimpresión de etiqueta. Motivo: {motivo_clean}"
+
+        # 1. Registrar Auditoría
+        db.add(LogAuditoria(
+            accion="SOLICITUD REIMPRESIÓN",
+            codigo_k=codigo_k,
+            material=kb.material,
+            medio=kb.medio,
+            almacen_destino=kb.almacen_destino,
+            puesto_destino=kb.puesto_destino,
+            detalle_cambio=detalle_motivo,
+            usuario=email_usuario,
+            fecha_hora=ahora_arg
+        ))
+
+        # 2. Registrar en Tracker Logístico
+        count_sol = db.query(func.count(TrackerSolicitud.id)).scalar() or 0
+        id_sol = f"SOL-{(count_sol + 1):05d}"
+        
+        db.add(TrackerSolicitud(
+            id_solicitud=id_sol,
+            material=kb.material,
+            codigo_k=codigo_k,
+            tipo_kb=kb.tipo_etiqueta,
+            puesto_destino=kb.puesto_destino,
+            medio=kb.medio,
+            cambio="REIMPRESIÓN",
+            accion_requerida="IMPRIMIR Y REEMPLAZAR ETIQUETA",
+            usuario_procesos=email_usuario,
+            fecha_solicitud=ahora_arg
+        ))
+
+        db.commit()
+        return True, f"✅ Solicitud de reimpresión enviada a Logística para el Kanban {codigo_k}."
+
 def eliminar_kanban_seguro(codigo_k: str, email_usuario: str) -> tuple[bool, str]:
     """Elimina un Kanban validando rol de Procesos, registra auditoría y avisa a Logística."""
     with get_db_session() as session:

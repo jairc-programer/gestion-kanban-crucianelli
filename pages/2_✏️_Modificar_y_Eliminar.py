@@ -3,7 +3,7 @@ import pandas as pd
 import io
 from utils.style import aplicar_estilo_enterprise
 from src.services.db_service import obtener_kanbans_df
-from src.services.kanban_service import eliminar_kanban_seguro, modificar_kanbans_masivo_desde_df
+from src.services.kanban_service import eliminar_kanban_seguro, modificar_kanbans_masivo_desde_df, solicitar_reimpresion_kanban
 from src.database.connection import get_db_session
 from src.database.models import Kanban, LogAuditoria, TrackerSolicitud
 from sqlalchemy import func
@@ -38,14 +38,18 @@ if 'msg_del_exito' in st.session_state:
     st.success(st.session_state['msg_del_exito'])
     del st.session_state['msg_del_exito']
 
-tab_ind, tab_masiva = st.tabs(["👤 Edición / Eliminación Individual", "📁 Carga Masiva (Excel/CSV)"])
+if 'msg_reimp_exito' in st.session_state:
+    st.success(st.session_state['msg_reimp_exito'])
+    del st.session_state['msg_reimp_exito']
 
-# --- TAB 1: MODIFICACIÓN / ELIMINACIÓN INDIVIDUAL ---
+tab_ind, tab_masiva = st.tabs(["👤 Edición / Acciones Individuales", "📁 Carga Masiva (Excel/CSV)"])
+
+# --- TAB 1: MODIFICACIÓN / ELIMINACIÓN / REIMPRESIÓN INDIVIDUAL ---
 with tab_ind:
     df_live = obtener_kanbans_df()
 
     if not df_live.empty:
-        col_left, col_right = st.columns([2, 1])
+        col_left, col_right = st.columns([2, 1.1])
         
         with col_left:
             st.markdown("##### ✏️ Modificar Kanban Existente")
@@ -216,20 +220,43 @@ with tab_ind:
                     st.warning(f"⚠️ No se encontraron Kanbans activos para la búsqueda: '{busqueda}'")
 
         with col_right:
-            st.markdown("##### 🗑️ Eliminar Kanban")
-            k_del = st.text_input("Código K a eliminar:", key="k_del_input").strip().upper()
-            if st.button("Eliminar Definitivamente", type="primary", key="btn_del"):
-                if not k_del:
-                    st.error("❌ NO SE PUDO ELIMINAR: Ingrese un Código K válido.")
-                else:
-                    usr_act = st.session_state['usuario']['email']
-                    ok, msg = eliminar_kanban_seguro(k_del, usr_act)
-                    if ok:
-                        st.session_state['msg_del_exito'] = msg
-                        st.toast(msg, icon="🗑️")
-                        st.rerun()
+            # --- ACCIÓN 1: SOLICITAR REIMPRESIÓN ---
+            with st.container(border=True):
+                st.markdown("##### 🖨️ Solicitar Reimpresión")
+                k_reimp = st.text_input("Código K a reimprimir:", key="k_reimp_input").strip().upper()
+                motivo_reimp = st.text_input("Motivo (opcional):", placeholder="ej. Etiqueta extraviada / deteriorada", key="motivo_reimp_input")
+                
+                if st.button("📨 Solicitar a Logística", use_container_width=True, key="btn_reimp"):
+                    if not k_reimp:
+                        st.error("❌ Ingrese un Código K válido.")
                     else:
-                        st.error(msg)
+                        usr_act = st.session_state['usuario']['email']
+                        ok, msg = solicitar_reimpresion_kanban(k_reimp, motivo_reimp, usr_act)
+                        if ok:
+                            st.session_state['msg_reimp_exito'] = msg
+                            st.toast(msg, icon="🖨️")
+                            st.rerun()
+                        else:
+                            st.error(msg)
+
+            st.markdown("---")
+
+            # --- ACCIÓN 2: ELIMINAR KANBAN ---
+            with st.container(border=True):
+                st.markdown("##### 🗑️ Eliminar Kanban")
+                k_del = st.text_input("Código K a eliminar:", key="k_del_input").strip().upper()
+                if st.button("Eliminar Definitivamente", type="primary", use_container_width=True, key="btn_del"):
+                    if not k_del:
+                        st.error("❌ NO SE PUDO ELIMINAR: Ingrese un Código K válido.")
+                    else:
+                        usr_act = st.session_state['usuario']['email']
+                        ok, msg = eliminar_kanban_seguro(k_del, usr_act)
+                        if ok:
+                            st.session_state['msg_del_exito'] = msg
+                            st.toast(msg, icon="🗑️")
+                            st.rerun()
+                        else:
+                            st.error(msg)
     else:
         st.info("ℹ️ No hay registros de Kanbans activos para modificar o eliminar.")
 
