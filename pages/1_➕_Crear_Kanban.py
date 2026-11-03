@@ -50,7 +50,7 @@ df_curr = obtener_kanbans_df()
 col1, col2, col3 = st.columns(3)
 with col1:
     centro = st.text_input("Centro", value="A110")
-    material = st.text_input("Código de Material (ej. PB005075, CB003354)", max_chars=12).upper().strip()
+    material = st.text_input("Código de Material (ej. PB005075, CN001234, CB003354)", max_chars=12).upper().strip()
     
     lote_pkg_std = obtener_lote_packaging(material) if material else None
     if lote_pkg_std:
@@ -84,10 +84,10 @@ if st.button("💾 Guardar y Crear Kanban", type="primary"):
         st.error("❌ NO SE PUDO CREAR: El Código de Material y el Puesto Destino son campos obligatorios.")
         es_valido = False
     
-    # 2. Validación de formato de Material Crucianelli (incluye CB, MPB, MCB, PB, CM)
-    patron_material = r'^(PB|CM|MPB|MCB|CB|PA|C|M|P|A|K)[0-9]{3,8}$'
+    # 2. Validación de formato de Material Crucianelli (incluye CN, PB, CM, MPB, MCB, CB, etc.)
+    patron_material = r'^(CN|PB|CM|MPB|MCB|CB|PA|C|M|P|A|K)[0-9]{3,8}$'
     if es_valido and not re.match(patron_material, material):
-        st.error(f"❌ FORMATO DE MATERIAL INVÁLIDO: '{material}' no coincide con el estándar de códigos corporativos (ej. PB005075, CB003354, CM001462).")
+        st.error(f"❌ FORMATO DE MATERIAL INVÁLIDO: '{material}' no coincide con el estándar de códigos corporativos (ej. CN001234, PB005075, CB003354, CM001462).")
         es_valido = False
 
     # 3. Cantidad de reposición válida
@@ -97,7 +97,7 @@ if st.button("💾 Guardar y Crear Kanban", type="primary"):
 
     # 4. Inconsistencia Punto de Pedido en TARJETA
     elif es_valido and tipo_soporte == "TARJETA" and float(cant_pp) >= float(cant_repo):
-        st.error(f"❌ NO SE PUDO CREAR: En Tipo TARJETA, el Punto de Pedido ({cant_pp}) debe ser estrictamente menor a la Reposición ({cant_repo}).")
+        st.error(f"❌ NO SE PUDO CREAR: En Tipo TARJETA, el Punto de Pedido ({cant_pp}) debe ser strictly menor a la Reposición ({cant_repo}).")
         es_valido = False
 
     # 5. Validación Lote Packaging Estándar
