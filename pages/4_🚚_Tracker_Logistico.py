@@ -38,19 +38,54 @@ else:
 
     df_trk['Estado General'] = df_trk.apply(calcular_estado_general, axis=1)
 
-    estado_filter = st.radio("Filtrar por Estado:", ["TODOS", "PENDIENTES", "COMPLETADOS"], horizontal=True)
+    # --- BARRA DE FILTROS AVANZADOS ---
+    with st.container(border=True):
+        st.markdown("##### 🔍 Filtros de Tareas Logísticas")
+        col_f_gen, col_f_sap, col_f_imp, col_f_pst = st.columns([1.2, 1, 1, 1])
 
+        with col_f_gen:
+            estado_filter = st.selectbox("Estado General:", ["TODOS", "PENDIENTES", "COMPLETADOS"], index=1)
+
+        with col_f_sap:
+            filter_sap = st.selectbox("1. Carga en SAP:", ["TODOS", "Pendiente SAP", "Realizado SAP"])
+
+        with col_f_imp:
+            filter_imp = st.selectbox("2. Impresión Etiqueta:", ["TODOS", "Pendiente Impresión", "Impreso"])
+
+        with col_f_pst:
+            filter_pst = st.selectbox("3. Puesto Destino:", ["TODOS", "Pendiente Puesto", "En Puesto"])
+
+    # --- APLICACIÓN DE FILTROS COMBINADOS ---
+    df_show = df_trk.copy()
+
+    # 1. Filtro General
     if estado_filter == "PENDIENTES":
-        df_show = df_trk[df_trk['Estado General'].isin(['PENDIENTE', 'EN PROCESO'])]
+        df_show = df_show[df_show['Estado General'].isin(['PENDIENTE', 'EN PROCESO'])]
     elif estado_filter == "COMPLETADOS":
-        df_show = df_trk[df_trk['Estado General'] == 'COMPLETADO']
-    else:
-        df_show = df_trk.copy()
+        df_show = df_show[df_show['Estado General'] == 'COMPLETADO']
 
-    st.markdown("##### 📋 Tareas Solicitadas por Procesos")
+    # 2. Filtro Hito SAP
+    if filter_sap == "Pendiente SAP":
+        df_show = df_show[~df_show['Estado SAP'].apply(es_si)]
+    elif filter_sap == "Realizado SAP":
+        df_show = df_show[df_show['Estado SAP'].apply(es_si)]
+
+    # 3. Filtro Hito Impresión
+    if filter_imp == "Pendiente Impresión":
+        df_show = df_show[~df_show['Estado Impresion'].apply(es_si)]
+    elif filter_imp == "Impreso":
+        df_show = df_show[df_show['Estado Impresion'].apply(es_si)]
+
+    # 4. Filtro Hito Puesto Destino
+    if filter_pst == "Pendiente Puesto":
+        df_show = df_show[~df_show['Estado Puesto'].apply(es_si)]
+    elif filter_pst == "En Puesto":
+        df_show = df_show[df_show['Estado Puesto'].apply(es_si)]
+
+    st.markdown(f"##### 📋 Tareas Solicitadas por Procesos ({len(df_show)} de {len(df_trk)})")
     
     if df_show.empty:
-        st.info("ℹ️ No se encontraron tareas para el filtro seleccionado.")
+        st.info("ℹ️ No se encontraron tareas que coincidan con la combinación de filtros seleccionada.")
     else:
         for idx, row in df_show.iterrows():
             sol_id = str(row.get('ID Solicitud', f"row_{idx}"))
@@ -141,7 +176,7 @@ else:
                         st.toast(f"✅ Ubicación física registrada para {k_code}", icon="📍")
                         st.rerun()
 
-                # --- TARJETA ETIQUETA E IMPRESIÓN DIRECTA (NUEVO FORMATO ESTÁNDAR 103x50mm) ---
+                # --- TARJETA ETIQUETA E IMPRESIÓN DIRECTA (FORMATO 103x50mm) ---
                 with c2:
                     st.markdown("##### 🏷️ Etiqueta Kanban (103x50 mm)")
                     
