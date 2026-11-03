@@ -50,7 +50,7 @@ df_curr = obtener_kanbans_df()
 col1, col2, col3 = st.columns(3)
 with col1:
     centro = st.text_input("Centro", value="A110")
-    material = st.text_input("Código de Material (ej. PB005075, CN001234, CB003354)", max_chars=12).upper().strip()
+    material = st.text_input("Código de Material", max_chars=12).upper().strip()
     
     lote_pkg_std = obtener_lote_packaging(material) if material else None
     if lote_pkg_std:
